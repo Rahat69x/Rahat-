@@ -1,0 +1,63 @@
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>  
+
+
+
+#define QUESTIONS 5
+#define OPTIONS 4
+
+char questions[QUESTIONS][100] = 
+{
+    "What is the smallest unit of storage in a computer?",
+    "Which programming language is known for its portability?",
+    "What does IDE stand for in software development?",
+    "Which data structure uses LIFO (Last In, First Out) principle?",
+    "What does HTML stand for?"
+};
+
+
+char options[QUESTIONS][OPTIONS][50] =
+{
+    {"A. Bit", "B. Byte", "C. Megabyte", "D. Gigabyte"},
+    {"A. Java", "B. C", "C. Python", "D. C++"},
+    {"A. Integrated Development Environment", "B. Interactive Development Environment", "C. Intelligent Development Environment", "D. Interface Design Environment"},
+    {"A. Queue", "B. Stack", "C. Linked List", "D. Tree"},
+    {"A. Hyper Text Markup Language", "B. High-Level Markup Language", "C. Home Tool Markup Language", "D. Human Technology Markup Language"}
+};
+
+char answers[QUESTIONS] = {'A', 'D', 'A', 'B', 'A'};
+void showQuestion(int q) {
+    printf("\nQ%d: %s\n", q + 1, questions[q]);
+    for (int i = 0; i < OPTIONS; i++) {
+        printf("%s\n", options[q][i]);
+    }
+}
+
+int main() {
+    char userAns;
+    int score = 0;
+
+    printf("Welcome to the Programming Quiz!\n");
+
+    for (int i = 0; i < QUESTIONS; i++;
+    {
+        showQuestion(i);
+        printf("Your answer (A/B/C/D): ");
+        scanf(" %c", &userAns);
+    
+        userAns = toupper(userAns);
+
+        if (userAns != 'A' && userAns != 'B' && userAns != 'C' && userAns != 'D') 
+        {
+            printf("Invalid input. Please enter A, B, C, or D only.\n");
+            printf("This question will be marked as incorrect.\n");
+        } else if (userAns == answers[i]) 
+        {
+            score++;
+        }
+    }
+
+    printf("\nYou scored %d out of %d!\n", score, QUESTIONS);
+    return 0;
+}
