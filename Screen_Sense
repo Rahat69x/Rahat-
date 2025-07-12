@@ -1,0 +1,53 @@
+#include <stdio.h>
+
+int main() {
+    int hours, minutes;
+    int negCount = 0;
+
+    printf("Enter screen time for PC (hours minutes):");
+    scanf("%d %d", &hours, &minutes);
+    int pcTime = hours * 60 + minutes;
+    printf("PC Screen Time: %d minutes\n", pcTime);
+    if (pcTime > 180) {
+        printf("PC usage is high.\n");
+        negCount++;
+    } else if (pcTime > 120) {
+        printf("PC usage is moderate.\n");
+    } else {
+        printf("PC usage is healthy.\n");
+    }printf("\nEnter screen time for Laptop (hours minutes):");
+    scanf("%d %d", &hours, &minutes);
+    int laptopTime = hours * 60 + minutes;
+    printf("Laptop Screen Time: %d minutes\n", laptopTime);
+    if (laptopTime > 180) {
+    printf("Laptop usage is high.\n");
+    negCount++;
+    } else if (laptopTime > 120) {
+        printf("Laptop usage is moderate.\n");
+    } else {
+        printf("Laptop usage is healthy.\n");
+    }
+    printf("\nEnter screen time for Phone (hours minutes): ");
+    scanf("%d %d", &hours, &minutes);
+    int phoneTime = hours * 60 + minutes;
+    printf("Phone Screen Time: %d minutes\n", phoneTime);
+    if (phoneTime > 240) {
+    printf("Phone usage is high.\n");
+    negCount++;
+    } else if (phoneTime > 120) {
+    printf("Phone usage is moderate.\n");
+    } else {
+    printf("Phone usage is healthy.\n");
+    }
+
+    printf("\n__Overall Screen Time Evaluation:__\n");
+    if (negCount == 0) {
+        printf("Overall usage is Good.\n");
+    } else if (negCount == 1) {
+        printf("Overall usage is Moderate.\n");
+    } else {
+        printf("Overall usage is Bad.\n");
+    }
+
+    return 0;
+}
