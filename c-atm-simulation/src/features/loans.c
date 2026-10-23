@@ -4,6 +4,7 @@
  */
 
 #include "loans.h"
+#include "scheduler.h"
 #include "account.h"
 #include "txn.h"
 #include "audit.h"
@@ -82,7 +83,8 @@ bool loan_check_eligibility(const Bank *bank, const Account *acc, int64_t reques
     }
 
     int64_t cap_minor = bank->config.loan_cap * 100;
-    int64_t max_allowed = 5 * acc->balance;
+    int64_t avg_bal = scheduler_get_avg_balance(bank, acc->id);
+    int64_t max_allowed = 5 * avg_bal;
     if (max_allowed > cap_minor) max_allowed = cap_minor;
     if (requested_principal > max_allowed) {
         if (err_msg) snprintf(err_msg, err_len, "Requested principal exceeds limit (%s%.2f)",

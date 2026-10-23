@@ -13,6 +13,9 @@
 #include "vouchers.h"
 #include "fraud.h"
 #include "otp.h"
+#include "statements.h"
+#include "analytics.h"
+#include "standing.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -283,6 +286,137 @@ static void handle_alerts(BankApi *api, long account_id) {
     }
 }
 
+static void handle_statements(BankApi *api, long account_id, const Config *cfg) {
+    Bank *bank = (Bank *)api->ctx;
+    printf("\n--- ACCOUNT STATEMENT & EXPORT (F10) ---\n");
+    printf("Enter Start Day (1 - %d): ", bank->sim_day > 0 ? bank->sim_day : 1);
+    int s_day = 1;
+    if (!input_get_int(&s_day, 1, 10000)) return;
+    printf("Enter End Day (%d - %d): ", s_day, bank->sim_day > 0 ? bank->sim_day : 1);
+    int e_day = bank->sim_day > 0 ? bank->sim_day : s_day;
+    if (!input_get_int(&e_day, s_day, 10000)) return;
+
+    Statement stmt;
+    if (!statement_generate(bank, account_id, s_day, e_day, &stmt)) {
+        printf("Failed to generate statement.\n");
+        return;
+    }
+
+    printf("\nStatement for Account ****%04ld (Period: Day %d - %d)\n", account_id % 10000, s_day, e_day);
+    printf("Opening Balance: %s%.2f | Closing Balance: %s%.2f\n",
+           cfg->currency, (double)stmt.opening_balance / 100.0,
+           cfg->currency, (double)stmt.closing_balance / 100.0);
+    printf("Total In:        %s%.2f | Total Out:       %s%.2f\n",
+           cfg->currency, (double)stmt.total_in / 100.0,
+           cfg->currency, (double)stmt.total_out / 100.0);
+    printf("Reconciliation:  %s\n", stmt.reconciled ? "VERIFIED (MATCH)" : "STATEMENT MISMATCH");
+
+    printf("\nExport Statement? (1: TXT, 2: RFC 4180 CSV, 0: No): ");
+    int exp_opt = 0;
+    if (input_get_int(&exp_opt, 0, 2) && exp_opt > 0) {
+        char path[128];
+        if (exp_opt == 1) {
+            statement_export_txt(bank, &stmt, "statements", path, sizeof(path));
+            printf("[EXPORT SUCCESS] Saved statement to '%s'\n", path);
+        } else {
+            statement_export_csv(&stmt, "statements", path, sizeof(path));
+            printf("[EXPORT SUCCESS] Saved RFC 4180 CSV to '%s'\n", path);
+        }
+    }
+}
+
+static void handle_analytics(BankApi *api, long account_id, const Config *cfg) {
+    Bank *bank = (Bank *)api->ctx;
+    analytics_render_spending(bank, account_id);
+
+    printf("\nBudget Options:\n");
+    printf("1. Set Monthly Withdrawal Budget Limit\n");
+    printf("2. Check Current Budget Alerts\n");
+    printf("0. Back\nChoice: ");
+    int b_opt = 0;
+    if (input_get_int(&b_opt, 0, 2) && b_opt == 1) {
+        printf("Enter Monthly Withdrawal Budget Limit (%s): ", cfg->currency);
+        long b_limit = 0;
+        if (input_get_long(&b_limit, 10, 1000000)) {
+            budget_set_limit(bank, account_id, TXN_WITHDRAW, (int64_t)b_limit * 100);
+            printf("Budget of %s%ld set successfully.\n", cfg->currency, b_limit);
+            budget_evaluate(bank, account_id);
+        }
+    } else if (b_opt == 2) {
+        budget_evaluate(bank, account_id);
+        printf("Budget evaluation refreshed. Check Menu 12 for alerts.\n");
+    }
+}
+
+static void handle_standing_orders(BankApi *api, long account_id, const Config *cfg) {
+    Bank *bank = (Bank *)api->ctx;
+    printf("\n--- STANDING ORDERS (F9) ---\n");
+    printf("1. View Active Standing Orders\n");
+    printf("2. Create New Standing Order (Requires OTP)\n");
+    printf("3. Cancel Standing Order\n");
+    printf("Choice: ");
+    int so_choice = 0;
+    if (!input_get_int(&so_choice, 1, 3)) return;
+
+    if (so_choice == 1) {
+        int count = 0;
+        for (size_t i = 0; i < bank->standing_order_count; ++i) {
+            StandingOrder *so = &bank->standing_orders[i];
+            if (so->account_id == account_id && so->is_active) {
+                count++;
+                printf("SO #%llu -> Recipient: ****%04ld | Amount: %s%.2f | Freq: Every %d days | Next run: Day %d\n",
+                       (unsigned long long)so->id, so->dest_account_id % 10000,
+                       cfg->currency, (double)so->amount / 100.0,
+                       (int)so->frequency, so->start_day);
+            }
+        }
+        if (count == 0) printf("No active standing orders found.\n");
+    } else if (so_choice == 2) {
+        printf("Enter destination account number: ");
+        long dst = 0;
+        if (!input_get_long(&dst, 1000, 999999)) return;
+        printf("Enter recurring transfer amount (%s): ", cfg->currency);
+        long whole = 0;
+        if (!input_get_long(&whole, 1, 1000000)) return;
+        int64_t amt = (int64_t)whole * 100;
+        printf("Frequency (1: Daily, 7: Weekly, 30: Monthly): ");
+        int f_days = 1;
+        if (!input_get_int(&f_days, 1, 30)) return;
+        Frequency freq = (f_days >= 30) ? FREQ_MONTHLY : ((f_days >= 7) ? FREQ_WEEKLY : FREQ_DAILY);
+        printf("Total execution count (e.g. 5, or 0 for unlimited): ");
+        int exec_count = 0;
+        input_get_int(&exec_count, 0, 100);
+
+        /* OTP required for standing order creation (F1, F9) */
+        otp_issue(bank, account_id, OTP_PURPOSE_TRANSFER, amt, NULL);
+        printf("Enter 6-digit OTP code to authorize recurring order: ");
+        char otp_code[16];
+        if (!input_get_line(otp_code, sizeof(otp_code))) return;
+
+        char err[128];
+        if (!otp_verify(bank, account_id, OTP_PURPOSE_TRANSFER, amt, otp_code, err, sizeof(err))) {
+            printf("OTP verification failed: %s\n", err);
+            return;
+        }
+
+        uint64_t so_id = 0;
+        if (standing_create(bank, account_id, dst, amt, freq, bank->sim_day + 1, exec_count, &so_id, err, sizeof(err))) {
+            printf("[SUCCESS] Standing order #%llu created successfully!\n", (unsigned long long)so_id);
+        } else {
+            printf("[ERROR] Failed to create standing order: %s\n", err);
+        }
+    } else if (so_choice == 3) {
+        printf("Enter Standing Order ID to cancel: ");
+        long so_id = 0;
+        if (!input_get_long(&so_id, 1, 999999)) return;
+        if (standing_cancel(bank, account_id, (uint64_t)so_id)) {
+            printf("[SUCCESS] Standing order cancelled.\n");
+        } else {
+            printf("[ERROR] Standing order not found or already cancelled.\n");
+        }
+    }
+}
+
 void menu_customer_run(BankApi *api, const Config *cfg) {
     printf("Enter Account Number (0 to quit): ");
     long id = 0;
@@ -325,9 +459,9 @@ void menu_customer_run(BankApi *api, const Config *cfg) {
             case 4: handle_transfer(api, id, cfg); break;
             case 5: handle_history(api, id, cfg); break;
             case 6: handle_change_pin(api, id); break;
-            case 7: printf("[INFO] Statements module scheduled for Step 4.\n"); break;
-            case 8: printf("[INFO] Analytics module scheduled for Step 4.\n"); break;
-            case 9: printf("[INFO] Standing orders scheduled for Step 4.\n"); break;
+            case 7: handle_statements(api, id, cfg); break;
+            case 8: handle_analytics(api, id, cfg); break;
+            case 9: handle_standing_orders(api, id, cfg); break;
             case 10: handle_loans(api, id, cfg); break;
             case 11: handle_voucher(api, id); break;
             case 12: handle_alerts(api, id); break;

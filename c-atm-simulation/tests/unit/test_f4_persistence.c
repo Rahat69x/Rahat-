@@ -42,7 +42,7 @@ int main(void) {
     store_release_lock(test_dir);
 
     /* 2. State serialization and reload */
-    Bank bank_orig;
+    static Bank bank_orig;
     bank_init(&bank_orig);
     bank_seed_demo(&bank_orig);
     account_create(&bank_orig, 2001, "Persist User", 999900LL, "4321");
@@ -50,7 +50,7 @@ int main(void) {
     bool saved = store_save_bank(test_dir, &bank_orig);
     TEST_CHECK(saved, "Persistence: Bank state saved atomically to bank.dat");
 
-    Bank bank_loaded;
+    static Bank bank_loaded;
     bank_init(&bank_loaded);
     bool loaded = store_load_bank(test_dir, &bank_loaded);
     TEST_CHECK(loaded, "Persistence: Bank state successfully loaded with CRC-32 verification");
@@ -73,7 +73,7 @@ int main(void) {
         fclose(f);
     }
 
-    Bank bank_backup_recovered;
+    static Bank bank_backup_recovered;
     bank_init(&bank_backup_recovered);
     bool recovered = store_load_bank(test_dir, &bank_backup_recovered);
     TEST_CHECK(recovered, "Recovery: Damaged primary bank.dat triggered automatic fallback to bank.dat.bak");

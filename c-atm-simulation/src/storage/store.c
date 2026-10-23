@@ -254,6 +254,7 @@ bool store_save_bank(const char *data_dir, const Bank *bank) {
         rename(bak_path, dat_path);
         return false;
     }
+    store_save_txns(dir, bank);
     return true;
 }
 
@@ -307,13 +308,115 @@ bool store_load_bank(const char *data_dir, Bank *bank) {
     snprintf(dat_path, sizeof(dat_path), "%s/bank.dat", dir);
     snprintf(bak_path, sizeof(bak_path), "%s/bank.dat.bak", dir);
 
+    bool loaded = false;
     if (try_load_file(dat_path, bank)) {
-        return true;
-    }
-    /* Fallback to backup */
-    if (try_load_file(bak_path, bank)) {
+        loaded = true;
+    } else if (try_load_file(bak_path, bank)) {
         printf("[WARN] Primary database corrupted; restored from backup '%s'.\n", bak_path);
-        return true;
+        loaded = true;
     }
-    return false;
+    if (loaded) {
+        store_load_txns(dir, bank);
+    }
+    return loaded;
+}
+
+bool store_save_txns(const char *data_dir, const Bank *bank) {
+    if (!bank) return false;
+    const char *dir = data_dir ? data_dir : "data";
+    char tmp_path[256], dat_path[256];
+    snprintf(tmp_path, sizeof(tmp_path), "%s/txns.dat.tmp", dir);
+    snprintf(dat_path, sizeof(dat_path), "%s/txns.dat", dir);
+
+    FILE *f = fopen(tmp_path, "w+b");
+    if (!f) return false;
+
+    write_bytes(f, STORE_MAGIC, 4);
+    write_u32(f, STORE_FORMAT_VERSION);
+    write_u32(f, (uint32_t)bank->txn_count);
+    write_u32(f, 0); /* CRC placeholder */
+
+    long payload_start = ftell(f);
+    for (size_t i = 0; i < bank->txn_count; ++i) {
+        const Txn *t = &bank->txns[i];
+        write_u64(f, t->id);
+        write_i64(f, (int64_t)t->account);
+        write_u32(f, (uint32_t)t->day);
+        write_u64(f, (uint64_t)t->clock_time);
+        write_u32(f, (uint32_t)t->type);
+        write_i64(f, t->amount);
+        write_i64(f, t->balance_after);
+        write_i64(f, (int64_t)t->counterparty);
+        write_bytes(f, t->note, sizeof(t->note));
+        write_bytes(f, t->receipt_no, sizeof(t->receipt_no));
+    }
+    long payload_end = ftell(f);
+
+    fflush(f);
+    fseek(f, payload_start, SEEK_SET);
+    size_t payload_len = (size_t)(payload_end - payload_start);
+    uint32_t crc = 0;
+    if (payload_len > 0) {
+        uint8_t *buf = malloc(payload_len);
+        if (buf) {
+            if (fread(buf, 1, payload_len, f) == payload_len) {
+                crc = crc32_calculate(buf, payload_len);
+            }
+            free(buf);
+        }
+    }
+    fseek(f, 12, SEEK_SET);
+    write_u32(f, crc);
+    fflush(f);
+    fclose(f);
+
+    remove(dat_path);
+    rename(tmp_path, dat_path);
+    return true;
+}
+
+bool store_load_txns(const char *data_dir, Bank *bank) {
+    if (!bank) return false;
+    const char *dir = data_dir ? data_dir : "data";
+    char dat_path[256];
+    snprintf(dat_path, sizeof(dat_path), "%s/txns.dat", dir);
+
+    FILE *f = fopen(dat_path, "rb");
+    if (!f) return false;
+
+    char magic[5] = {0};
+    uint32_t ver = 0, count = 0, stored_crc = 0;
+    if (!read_bytes(f, magic, 4) || !read_u32(f, &ver) || !read_u32(f, &count) || !read_u32(f, &stored_crc)) {
+        fclose(f);
+        return false;
+    }
+    if (memcmp(magic, STORE_MAGIC, 4) != 0 || count > MAX_TXNS_TOTAL) {
+        fclose(f);
+        return false;
+    }
+
+    bank->txn_count = count;
+    for (size_t i = 0; i < count; ++i) {
+        Txn *t = &bank->txns[i];
+        int64_t acc, amt, bal, cparty;
+        uint32_t day, type;
+        uint64_t clock_u;
+        if (!read_u64(f, &t->id) || !read_i64(f, &acc) || !read_u32(f, &day) ||
+            !read_u64(f, &clock_u) || !read_u32(f, &type) || !read_i64(f, &amt) ||
+            !read_i64(f, &bal) || !read_i64(f, &cparty) ||
+            !read_bytes(f, t->note, sizeof(t->note)) ||
+            !read_bytes(f, t->receipt_no, sizeof(t->receipt_no))) {
+            fclose(f);
+            return false;
+        }
+        t->account = (long)acc;
+        t->day = (int)day;
+        t->clock_time = (time_t)clock_u;
+        t->type = (TxnType)type;
+        t->amount = amt;
+        t->balance_after = bal;
+        t->counterparty = (long)cparty;
+    }
+    fclose(f);
+    return true;
 }

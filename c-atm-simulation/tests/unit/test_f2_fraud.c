@@ -29,7 +29,7 @@ int main(void) {
     printf("        RUNNING F2 FRAUD RULE ENGINE TEST SUITE     \n");
     printf("====================================================\n");
 
-    Bank bank;
+    static Bank bank;
     bank_init(&bank);
     bank_seed_demo(&bank);
     fraud_init(&bank);

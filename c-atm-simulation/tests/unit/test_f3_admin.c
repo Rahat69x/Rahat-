@@ -26,7 +26,7 @@ int main(void) {
     printf("       RUNNING F3 ADMIN ACCOUNTS TEST SUITE         \n");
     printf("====================================================\n");
 
-    Bank bank;
+    static Bank bank;
     bank_init(&bank);
     admin_seed_default(&bank);
 

@@ -26,7 +26,7 @@ static int g_fail = 0;
 } while(0)
 
 static void test_baseline_features(void) {
-    Bank bank;
+    static Bank bank;
     bank_init(&bank);
     bank_seed_demo(&bank);
     BankApi api = bank_api_create_local(&bank);

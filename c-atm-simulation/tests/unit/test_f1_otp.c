@@ -27,7 +27,7 @@ int main(void) {
     printf("        RUNNING F1 SIMULATED OTP TEST SUITE         \n");
     printf("====================================================\n");
 
-    Bank bank;
+    static Bank bank;
     bank_init(&bank);
     otp_init();
 

@@ -239,6 +239,26 @@ typedef struct {
     uint8_t hash[HASH_SIZE];
 } AuditEntry;
 
+/* Account Budget Configuration (F10) */
+typedef struct {
+    long account_id;
+    TxnType type;
+    int64_t monthly_limit;
+    bool is_active;
+} AccountBudget;
+
+/* Job Ledger for Idempotent Scheduler (F9) */
+typedef struct {
+    int last_snapshot_day;
+    int last_standing_day;
+    int last_loan_day;
+    int last_interest_day;
+    int last_voucher_day;
+    int last_reset_day;
+    int last_fraud_day;
+    int last_day_end;
+} JobLedger;
+
 /* Bank System Root State */
 typedef struct {
     Config config;
@@ -264,6 +284,9 @@ typedef struct {
     
     Alert alerts[MAX_ALERTS];
     size_t alert_count;
+
+    AccountBudget budgets[MAX_ACCOUNTS];
+    size_t budget_count;
     
     uint8_t audit_head_hash[HASH_SIZE];
     uint64_t next_txn_id;
@@ -272,6 +295,10 @@ typedef struct {
     uint64_t next_so_id;
     uint64_t next_alert_id;
     uint64_t next_audit_seq;
+
+    JobLedger ledger;
+    int64_t balance_snapshots[MAX_ACCOUNTS][30];
+    int snapshot_count[MAX_ACCOUNTS];
 } Bank;
 
 #endif /* TYPES_H */

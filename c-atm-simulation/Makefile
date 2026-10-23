@@ -4,17 +4,18 @@
 # ==============================================================================
 
 CC = gcc
-CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude
-LDFLAGS = -lm
+CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude -Isrc
+LDFLAGS = -lm -lws2_32 -Wl,--stack,8388608
 
 SRC_CORE = src/core/bank.c src/core/account.c src/core/txn.c src/core/money.c src/core/clock.c
 SRC_CRYPTO = src/security/sha256.c src/security/hmac.c src/security/crc32.c src/security/rng.c src/security/pin.c
 SRC_SEC  = $(SRC_CRYPTO) src/security/audit.c src/security/otp.c src/security/fraud.c
 SRC_STOR = src/storage/config.c src/storage/store.c
-SRC_FEAT = src/features/admin.c src/features/loans.c src/features/vouchers.c
+SRC_FEAT = src/features/admin.c src/features/loans.c src/features/vouchers.c src/features/standing.c src/features/scheduler.c src/features/statements.c src/features/analytics.c
+SRC_NET  = src/net/proto.c src/net/server.c src/net/client.c
 SRC_UI   = src/ui/input.c src/ui/render.c src/ui/menu_customer.c src/ui/menu_admin.c
 
-ALL_OBJS = $(SRC_CORE) $(SRC_SEC) $(SRC_STOR) $(SRC_FEAT) $(SRC_UI)
+ALL_OBJS = $(SRC_CORE) $(SRC_SEC) $(SRC_STOR) $(SRC_FEAT) $(SRC_NET) $(SRC_UI)
 
 TARGET_ATM = atm.exe
 TARGET_BANKD = bankd.exe
@@ -27,15 +28,21 @@ TEST_OTP = test_otp.exe
 TEST_FRAUD = test_fraud.exe
 TEST_VOUCHERS = test_vouchers.exe
 TEST_LOANS = test_loans.exe
+TEST_SCHEDULER = test_scheduler.exe
+TEST_STATEMENTS = test_statements.exe
+TEST_STRESS = test_stress.exe
 
-ALL_TESTS = $(TEST_CRYPTO) $(TEST_REGRESSION) $(TEST_PERSIST) $(TEST_AUDIT) $(TEST_ADMIN) $(TEST_OTP) $(TEST_FRAUD) $(TEST_VOUCHERS) $(TEST_LOANS)
+ALL_TESTS = $(TEST_CRYPTO) $(TEST_REGRESSION) $(TEST_PERSIST) $(TEST_AUDIT) $(TEST_ADMIN) $(TEST_OTP) $(TEST_FRAUD) $(TEST_VOUCHERS) $(TEST_LOANS) $(TEST_SCHEDULER) $(TEST_STATEMENTS) $(TEST_STRESS)
 
 .PHONY: all test asan clean run-atm run-bankd
 
-all: $(TARGET_ATM)
+all: $(TARGET_ATM) $(TARGET_BANKD)
 
 $(TARGET_ATM): src/main_atm.c $(ALL_OBJS)
 	$(CC) $(CFLAGS) -O2 src/main_atm.c $(ALL_OBJS) -o $(TARGET_ATM) $(LDFLAGS)
+
+$(TARGET_BANKD): src/main_bankd.c $(ALL_OBJS)
+	$(CC) $(CFLAGS) -O2 src/main_bankd.c $(ALL_OBJS) -o $(TARGET_BANKD) $(LDFLAGS)
 
 $(TEST_CRYPTO): tests/unit/test_f7_crypto.c $(SRC_CRYPTO)
 	$(CC) $(CFLAGS) -O2 tests/unit/test_f7_crypto.c $(SRC_CRYPTO) -o $(TEST_CRYPTO) $(LDFLAGS)
@@ -64,6 +71,15 @@ $(TEST_VOUCHERS): tests/unit/test_f6_vouchers.c $(ALL_OBJS)
 $(TEST_LOANS): tests/unit/test_f5_loans.c $(ALL_OBJS)
 	$(CC) $(CFLAGS) -O2 tests/unit/test_f5_loans.c $(ALL_OBJS) -o $(TEST_LOANS) $(LDFLAGS)
 
+$(TEST_SCHEDULER): tests/unit/test_f9_scheduler.c $(ALL_OBJS)
+	$(CC) $(CFLAGS) -O2 tests/unit/test_f9_scheduler.c $(ALL_OBJS) -o $(TEST_SCHEDULER) $(LDFLAGS)
+
+$(TEST_STATEMENTS): tests/unit/test_f10_statements.c $(ALL_OBJS)
+	$(CC) $(CFLAGS) -O2 tests/unit/test_f10_statements.c $(ALL_OBJS) -o $(TEST_STATEMENTS) $(LDFLAGS)
+
+$(TEST_STRESS): tests/integration/stress_client.c $(ALL_OBJS)
+	$(CC) $(CFLAGS) -O2 tests/integration/stress_client.c $(ALL_OBJS) -o $(TEST_STRESS) $(LDFLAGS)
+
 test: $(ALL_TESTS)
 	@echo "[*] Running F7 Cryptographic Primitives Test Suite..."
 	.\$(TEST_CRYPTO)
@@ -83,6 +99,12 @@ test: $(ALL_TESTS)
 	.\$(TEST_VOUCHERS)
 	@echo "[*] Running F5 Loan Lifecycle Test Suite..."
 	.\$(TEST_LOANS)
+	@echo "[*] Running F9 Scheduler & Interest Test Suite..."
+	.\$(TEST_SCHEDULER)
+	@echo "[*] Running F10 Statements & Analytics Test Suite..."
+	.\$(TEST_STATEMENTS)
+	@echo "[*] Running F8 Socket Stress & Concurrency Test Suite..."
+	.\$(TEST_STRESS)
 
 asan: CFLAGS += -fsanitize=address,undefined -g
 asan: clean test
@@ -93,5 +115,5 @@ clean:
 run-atm: $(TARGET_ATM)
 	.\$(TARGET_ATM) --standalone
 
-run-bankd:
-	@echo "[INFO] bankd will be compiled in Step 4"
+run-bankd: $(TARGET_BANKD)
+	.\$(TARGET_BANKD)

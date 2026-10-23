@@ -30,7 +30,7 @@ int main(void) {
     const char *test_dir = "data";
     remove("data/audit.log");
 
-    Bank bank;
+    static Bank bank;
     bank_init(&bank);
     audit_init(&bank);
 

@@ -19,7 +19,7 @@ void bank_init(Bank *bank) {
     if (!bank) return;
     memset(bank, 0, sizeof(Bank));
     config_set_defaults(&bank->config);
-    bank->sim_day = 1;
+    bank->sim_day = 0;
 }
 
 void bank_seed_demo(Bank *bank) {

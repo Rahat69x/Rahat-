@@ -18,6 +18,9 @@ void store_release_lock(const char *data_dir);
 bool store_save_bank(const char *data_dir, const Bank *bank);
 bool store_load_bank(const char *data_dir, Bank *bank);
 
+bool store_save_txns(const char *data_dir, const Bank *bank);
+bool store_load_txns(const char *data_dir, Bank *bank);
+
 void store_migrate_v1_to_v2(Bank *bank);
 
 #endif /* STORE_H */
