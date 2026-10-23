@@ -1,0 +1,39 @@
+# ==============================================================================
+# Bank Configuration Parameters (A19)
+# Format: KEY=VALUE
+# Lines starting with # are comments. Whitespace around keys/values is ignored.
+# ==============================================================================
+
+# Session & Security Settings
+SESSION_TIMEOUT_SEC=60
+MAX_PIN_ATTEMPTS=3
+OTP_THRESHOLD=10000.00
+OTP_EXPIRY_SEC=60
+
+# Account Type Minimum Balances (BDT)
+SAVINGS_MIN_BALANCE=500.00
+CURRENT_MIN_BALANCE=1000.00
+STUDENT_MIN_BALANCE=100.00
+
+# Account Type Daily Limits (BDT)
+SAVINGS_DAILY_LIMIT=20000.00
+CURRENT_DAILY_LIMIT=100000.00
+STUDENT_DAILY_LIMIT=10000.00
+
+# Transaction Fees & Surcharges
+TRANSFER_FEE_PERCENT=0.50
+FREE_WITHDRAWALS_PER_MONTH=4
+EXTRA_WITHDRAWAL_FEE=15.00
+
+# Annual Interest Rates (%)
+SAVINGS_ANNUAL_INTEREST=4.50
+CURRENT_ANNUAL_INTEREST=0.00
+STUDENT_ANNUAL_INTEREST=2.50
+
+# Fraud Detection Heuristics
+FRAUD_VELOCITY_COUNT=3
+FRAUD_VELOCITY_SECONDS=120
+FRAUD_TRANSFER_PCT=0.80
+
+# ATM Hardware Inventory Alert
+LOW_NOTES_THRESHOLD=20

@@ -1,0 +1,18 @@
+# Executables and object files
+*.exe
+*.o
+*.obj
+*.out
+
+# Runtime data files (do not commit actual databases or logs)
+accounts.dat
+accounts.bak
+accounts.tmp
+audit.log
+statement.csv
+
+# IDE and temporary files
+.vscode/
+.idea/
+*.swp
+*~

@@ -1,0 +1,4 @@
+# Foreign Exchange Rates Table (A6)
+# Format: KEY=VALUE (Target currency unit expressed in BDT)
+USD_TO_BDT=121.50
+EUR_TO_BDT=131.20
