@@ -10,6 +10,8 @@
 #include "pin.h"
 #include "clock.h"
 #include "config.h"
+#include "fraud.h"
+#include "otp.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -129,6 +131,12 @@ static ApiResult local_withdraw(void *ctx, long account_id, int64_t amount) {
         snprintf(res.message, sizeof(res.message), "Account not found");
         return res;
     }
+    if (acc->status != STATUS_ACTIVE) {
+        res.error_code = 403;
+        snprintf(res.message, sizeof(res.message), "Account not active (status: %s)",
+                 acc->status == STATUS_FROZEN ? "FROZEN" : "BLOCKED");
+        return res;
+    }
 
     account_reset_daily_limits_if_needed(acc, sim_day());
     char reason[64];
@@ -141,6 +149,8 @@ static ApiResult local_withdraw(void *ctx, long account_id, int64_t amount) {
     acc->balance -= amount;
     acc->withdrawn_today += amount;
     txn_record(b, acc->id, TXN_WITHDRAW, amount, acc->balance, 0, "ATM Cash Withdrawal", res.receipt_no);
+    fraud_eval_operation(b, acc, TXN_WITHDRAW, amount, 0);
+
     res.success = true;
     res.balance_after = acc->balance;
     snprintf(res.message, sizeof(res.message), "Withdrawal successful");
@@ -148,7 +158,6 @@ static ApiResult local_withdraw(void *ctx, long account_id, int64_t amount) {
 }
 
 static ApiResult local_transfer(void *ctx, long src_id, long dst_id, int64_t amount, const char *otp) {
-    (void)otp;
     Bank *b = (Bank *)ctx;
     ApiResult res = {false, 0, "", "", 0};
     if (src_id == dst_id) {
@@ -160,7 +169,7 @@ static ApiResult local_transfer(void *ctx, long src_id, long dst_id, int64_t amo
     Account *dst = account_find(b, dst_id);
     if (!src || !dst || src->status != STATUS_ACTIVE || dst->status != STATUS_ACTIVE) {
         res.error_code = 400;
-        snprintf(res.message, sizeof(res.message), "Invalid sender or recipient");
+        snprintf(res.message, sizeof(res.message), "Sender or recipient account not active");
         return res;
     }
     if (amount <= 0 || src->balance < amount) {
@@ -169,11 +178,21 @@ static ApiResult local_transfer(void *ctx, long src_id, long dst_id, int64_t amo
         return res;
     }
 
+    if (otp && strlen(otp) == 6) {
+        char err[128];
+        if (!otp_verify(b, src_id, OTP_PURPOSE_TRANSFER, amount, otp, err, sizeof(err))) {
+            res.error_code = 401;
+            snprintf(res.message, sizeof(res.message), "Verification error: %.100s", err);
+            return res;
+        }
+    }
+
     src->balance -= amount;
     dst->balance += amount;
     txn_record(b, src->id, TXN_TRANSFER_OUT, amount, src->balance, dst->id, "Fund Transfer Out", res.receipt_no);
     char dummy_rec[RECEIPT_ID_LEN + 1];
     txn_record(b, dst->id, TXN_TRANSFER_IN, amount, dst->balance, src->id, "Fund Transfer In", dummy_rec);
+    fraud_eval_operation(b, src, TXN_TRANSFER_OUT, amount, dst->id);
 
     res.success = true;
     res.balance_after = src->balance;

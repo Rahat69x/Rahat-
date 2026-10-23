@@ -8,6 +8,11 @@
 #include "money.h"
 #include "render.h"
 #include "clock.h"
+#include "account.h"
+#include "loans.h"
+#include "vouchers.h"
+#include "fraud.h"
+#include "otp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,6 +122,167 @@ static void handle_change_pin(BankApi *api, long account_id) {
     }
 }
 
+static void handle_loans(BankApi *api, long account_id, const Config *cfg) {
+    Bank *bank = (Bank *)api->ctx;
+    printf("\n--- LOAN MANAGEMENT (F5) ---\n");
+    printf("1. View Products & Calculator\n");
+    printf("2. Apply for Loan\n");
+    printf("3. My Active Loans & Prepay\n");
+    printf("Choice: ");
+    int sub = 0;
+    if (!input_get_int(&sub, 1, 3)) return;
+
+    if (sub == 1) {
+        printf("\nAvailable Products:\n");
+        printf("1. PERSONAL Loan: 12%% annual, up to 24 months\n");
+        printf("2. SHORT Loan:    8%% annual, up to 6 months\n");
+        printf("Enter Principal (%s): ", cfg->currency);
+        long p_whole = 0;
+        if (!input_get_long(&p_whole, 100, 1000000)) return;
+        int64_t principal = (int64_t)p_whole * 100;
+        printf("Enter Tenure (months): ");
+        int tenure = 0;
+        if (!input_get_int(&tenure, 1, 24)) return;
+
+        int64_t emi = loan_calculate_emi(principal, 12, tenure);
+        char emi_buf[32];
+        money_format(emi, cfg->currency, emi_buf, sizeof(emi_buf));
+        printf("\nEstimated Monthly EMI: %s\n", emi_buf);
+
+        AmortizationRow rows[24];
+        if (loan_generate_schedule(principal, 12, tenure, rows, 24)) {
+            printf("\nAmortization Schedule (Sample):\n");
+            printf("Mo | Monthly EMI | Principal | Interest | Balance\n");
+            printf("---+-------------+-----------+----------+----------\n");
+            for (int i = 0; i < tenure; ++i) {
+                printf("%2d | %11.2f | %9.2f | %8.2f | %10.2f\n",
+                       rows[i].month, (double)rows[i].emi / 100.0,
+                       (double)rows[i].principal_part / 100.0,
+                       (double)rows[i].interest_part / 100.0,
+                       (double)rows[i].balance_after / 100.0);
+            }
+        }
+    } else if (sub == 2) {
+        printf("Product (1: Personal 12%%, 2: Short 8%%): ");
+        int p_type = 1;
+        if (!input_get_int(&p_type, 1, 2)) return;
+        LoanType lt = (p_type == 1) ? LOAN_PERSONAL : LOAN_SHORT;
+        printf("Requested Principal (%s): ", cfg->currency);
+        long p_whole = 0;
+        if (!input_get_long(&p_whole, 100, 1000000)) return;
+        int64_t principal = (int64_t)p_whole * 100;
+        printf("Tenure (months): ");
+        int tenure = 0;
+        if (!input_get_int(&tenure, 1, (lt == LOAN_PERSONAL ? 24 : 6))) return;
+
+        /* Issue simulated OTP for loan application */
+        otp_issue(bank, account_id, OTP_PURPOSE_LOAN, principal, NULL);
+        printf("Enter 6-digit OTP code to submit application: ");
+        char code[16];
+        if (!input_get_line(code, sizeof(code))) return;
+
+        char err[128];
+        if (!otp_verify(bank, account_id, OTP_PURPOSE_LOAN, principal, code, err, sizeof(err))) {
+            printf("OTP verification failed: %s\n", err);
+            return;
+        }
+
+        uint64_t loan_id = 0;
+        if (loan_apply(bank, account_id, lt, principal, tenure, &loan_id, err, sizeof(err))) {
+            printf("Loan application submitted successfully! Application ID: #%llu (Status: PENDING approval)\n",
+                   (unsigned long long)loan_id);
+        } else {
+            printf("Application rejected: %s\n", err);
+        }
+    } else if (sub == 3) {
+        printf("\n--- Active Loans ---\n");
+        int count = 0;
+        for (size_t i = 0; i < bank->loan_count; ++i) {
+            Loan *ln = &bank->loans[i];
+            if (ln->account_id == account_id) {
+                count++;
+                printf("Loan #%llu: Principal: %s%.2f | Balance: %s%.2f | EMI: %s%.2f | Status: %s\n",
+                       (unsigned long long)ln->id, cfg->currency, (double)ln->principal / 100.0,
+                       cfg->currency, (double)ln->remaining_balance / 100.0,
+                       cfg->currency, (double)ln->emi / 100.0,
+                       ln->status == LOAN_ACTIVE ? "ACTIVE" : (ln->status == LOAN_PENDING ? "PENDING" : "OTHER"));
+            }
+        }
+        if (count == 0) {
+            printf("No loans found for this account.\n");
+            return;
+        }
+        printf("\nPrepay a loan? (1: Full, 2: Partial, 0: No): ");
+        int prep = 0;
+        if (!input_get_int(&prep, 0, 2) || prep == 0) return;
+        printf("Enter Loan ID to prepay: ");
+        long lid = 0;
+        if (!input_get_long(&lid, 1, 999999)) return;
+        int64_t p_amt = 0;
+        if (prep == 2) {
+            printf("Enter prepayment amount (%s): ", cfg->currency);
+            long whole = 0;
+            if (!input_get_long(&whole, 1, 1000000)) return;
+            p_amt = (int64_t)whole * 100;
+        }
+        char err[128];
+        if (loan_prepay(bank, account_id, (uint64_t)lid, p_amt, prep == 1, err, sizeof(err))) {
+            printf("Prepayment processed successfully!\n");
+        } else {
+            printf("Prepayment failed: %s\n", err);
+        }
+    }
+}
+
+static void handle_voucher(BankApi *api, long account_id) {
+    Bank *bank = (Bank *)api->ctx;
+    printf("\n--- REDEEM VOUCHER (F6) ---\n");
+    printf("Enter 14-character Voucher Code (format: XXXX-XXXX-XXXX): ");
+    char code[32];
+    if (!input_get_line(code, sizeof(code))) return;
+
+    char msg[128];
+    if (voucher_redeem(bank, account_id, code, msg, sizeof(msg))) {
+        printf("[SUCCESS] %s\n", msg);
+    } else {
+        printf("[ERROR] %s\n", msg);
+    }
+}
+
+static void handle_alerts(BankApi *api, long account_id) {
+    Bank *bank = (Bank *)api->ctx;
+    Account *acc = account_find(bank, account_id);
+    if (!acc) return;
+
+    printf("\n--- SECURITY & FRAUD ALERTS (F2) ---\n");
+    printf("Current Security Risk Score: %d / 100\n", acc->risk_score);
+    if (acc->risk_score >= bank->config.fraud_freeze) {
+        printf("STATUS: [CRITICAL] Account is FROZEN. Money operations disabled.\n");
+    } else if (acc->risk_score >= bank->config.fraud_stepup) {
+        printf("STATUS: [WARNING] Step-up verification (OTP) required for operations.\n");
+    } else if (acc->risk_score >= bank->config.fraud_warn) {
+        printf("STATUS: [NOTICE] Elevated security risk detected.\n");
+    } else {
+        printf("STATUS: [NORMAL] Account standing is good.\n");
+    }
+
+    printf("\nAlert History:\n");
+    int count = 0;
+    for (size_t i = 0; i < bank->alert_count; ++i) {
+        if (bank->alerts[i].account_id == account_id) {
+            count++;
+            printf("Alert #%llu (Day %d): [Rule R%d] Score: %d | Status: %s | %s\n",
+                   (unsigned long long)bank->alerts[i].id, bank->alerts[i].day,
+                   bank->alerts[i].rule_id, bank->alerts[i].risk_score,
+                   bank->alerts[i].status == ALERT_NEW ? "NEW" : "ACKNOWLEDGED",
+                   bank->alerts[i].message);
+        }
+    }
+    if (count == 0) {
+        printf("No security incidents recorded.\n");
+    }
+}
+
 void menu_customer_run(BankApi *api, const Config *cfg) {
     printf("Enter Account Number (0 to quit): ");
     long id = 0;
@@ -162,9 +328,9 @@ void menu_customer_run(BankApi *api, const Config *cfg) {
             case 7: printf("[INFO] Statements module scheduled for Step 4.\n"); break;
             case 8: printf("[INFO] Analytics module scheduled for Step 4.\n"); break;
             case 9: printf("[INFO] Standing orders scheduled for Step 4.\n"); break;
-            case 10: printf("[INFO] Loans module scheduled for Step 3.\n"); break;
-            case 11: printf("[INFO] Vouchers module scheduled for Step 3.\n"); break;
-            case 12: printf("[INFO] Security alerts scheduled for Step 3.\n"); break;
+            case 10: handle_loans(api, id, cfg); break;
+            case 11: handle_voucher(api, id); break;
+            case 12: handle_alerts(api, id); break;
             case 0:
                 api->logout(api->ctx, id);
                 in_session = false;

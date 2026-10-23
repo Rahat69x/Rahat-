@@ -9,9 +9,9 @@ LDFLAGS = -lm
 
 SRC_CORE = src/core/bank.c src/core/account.c src/core/txn.c src/core/money.c src/core/clock.c
 SRC_CRYPTO = src/security/sha256.c src/security/hmac.c src/security/crc32.c src/security/rng.c src/security/pin.c
-SRC_SEC  = $(SRC_CRYPTO) src/security/audit.c
+SRC_SEC  = $(SRC_CRYPTO) src/security/audit.c src/security/otp.c src/security/fraud.c
 SRC_STOR = src/storage/config.c src/storage/store.c
-SRC_FEAT = src/features/admin.c
+SRC_FEAT = src/features/admin.c src/features/loans.c src/features/vouchers.c
 SRC_UI   = src/ui/input.c src/ui/render.c src/ui/menu_customer.c src/ui/menu_admin.c
 
 ALL_OBJS = $(SRC_CORE) $(SRC_SEC) $(SRC_STOR) $(SRC_FEAT) $(SRC_UI)
@@ -23,6 +23,12 @@ TEST_REGRESSION = test_regression.exe
 TEST_PERSIST = test_persistence.exe
 TEST_AUDIT = test_audit.exe
 TEST_ADMIN = test_admin.exe
+TEST_OTP = test_otp.exe
+TEST_FRAUD = test_fraud.exe
+TEST_VOUCHERS = test_vouchers.exe
+TEST_LOANS = test_loans.exe
+
+ALL_TESTS = $(TEST_CRYPTO) $(TEST_REGRESSION) $(TEST_PERSIST) $(TEST_AUDIT) $(TEST_ADMIN) $(TEST_OTP) $(TEST_FRAUD) $(TEST_VOUCHERS) $(TEST_LOANS)
 
 .PHONY: all test asan clean run-atm run-bankd
 
@@ -46,7 +52,19 @@ $(TEST_AUDIT): tests/unit/test_f7_audit.c $(ALL_OBJS)
 $(TEST_ADMIN): tests/unit/test_f3_admin.c $(ALL_OBJS)
 	$(CC) $(CFLAGS) -O2 tests/unit/test_f3_admin.c $(ALL_OBJS) -o $(TEST_ADMIN) $(LDFLAGS)
 
-test: $(TEST_CRYPTO) $(TEST_REGRESSION) $(TEST_PERSIST) $(TEST_AUDIT) $(TEST_ADMIN)
+$(TEST_OTP): tests/unit/test_f1_otp.c $(ALL_OBJS)
+	$(CC) $(CFLAGS) -O2 tests/unit/test_f1_otp.c $(ALL_OBJS) -o $(TEST_OTP) $(LDFLAGS)
+
+$(TEST_FRAUD): tests/unit/test_f2_fraud.c $(ALL_OBJS)
+	$(CC) $(CFLAGS) -O2 tests/unit/test_f2_fraud.c $(ALL_OBJS) -o $(TEST_FRAUD) $(LDFLAGS)
+
+$(TEST_VOUCHERS): tests/unit/test_f6_vouchers.c $(ALL_OBJS)
+	$(CC) $(CFLAGS) -O2 tests/unit/test_f6_vouchers.c $(ALL_OBJS) -o $(TEST_VOUCHERS) $(LDFLAGS)
+
+$(TEST_LOANS): tests/unit/test_f5_loans.c $(ALL_OBJS)
+	$(CC) $(CFLAGS) -O2 tests/unit/test_f5_loans.c $(ALL_OBJS) -o $(TEST_LOANS) $(LDFLAGS)
+
+test: $(ALL_TESTS)
 	@echo "[*] Running F7 Cryptographic Primitives Test Suite..."
 	.\$(TEST_CRYPTO)
 	@echo "[*] Running Baseline ATM Regression Test Suite..."
@@ -57,12 +75,20 @@ test: $(TEST_CRYPTO) $(TEST_REGRESSION) $(TEST_PERSIST) $(TEST_AUDIT) $(TEST_ADM
 	.\$(TEST_AUDIT)
 	@echo "[*] Running F3 Admin Accounts Test Suite..."
 	.\$(TEST_ADMIN)
+	@echo "[*] Running F1 Simulated OTP Test Suite..."
+	.\$(TEST_OTP)
+	@echo "[*] Running F2 Fraud Rule Engine Test Suite..."
+	.\$(TEST_FRAUD)
+	@echo "[*] Running F6 Vouchers Test Suite..."
+	.\$(TEST_VOUCHERS)
+	@echo "[*] Running F5 Loan Lifecycle Test Suite..."
+	.\$(TEST_LOANS)
 
 asan: CFLAGS += -fsanitize=address,undefined -g
 asan: clean test
 
 clean:
-	rm -f $(TARGET_ATM) $(TARGET_BANKD) $(TEST_CRYPTO) $(TEST_REGRESSION) $(TEST_PERSIST) $(TEST_AUDIT) $(TEST_ADMIN) *.o src/**/*.o tests/**/*.o data/*.lock data/*.tmp data/*.bak 2>/dev/null || true
+	rm -f $(TARGET_ATM) $(TARGET_BANKD) $(ALL_TESTS) *.o src/**/*.o tests/**/*.o data/*.lock data/*.tmp data/*.bak 2>/dev/null || true
 
 run-atm: $(TARGET_ATM)
 	.\$(TARGET_ATM) --standalone
