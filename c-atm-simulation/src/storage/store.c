@@ -12,11 +12,21 @@
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
 #include <io.h>
+#include <direct.h>
+#define MAKE_DIR(d) _mkdir(d)
 #define F_OK 0
 #else
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#define MAKE_DIR(d) mkdir(d, 0755)
 #endif
+
+static void ensure_dir_exists(const char *dir) {
+    if (dir && dir[0] != '\0') {
+        MAKE_DIR(dir);
+    }
+}
 
 /* Serialization helpers (little-endian) */
 static void write_u8(FILE *f, uint8_t v) { fputc(v, f); }
@@ -65,8 +75,10 @@ static bool read_bytes(FILE *f, void *data, size_t len) {
 }
 
 bool store_acquire_lock(const char *data_dir, char *err_msg, size_t err_len) {
+    const char *dir = data_dir ? data_dir : "data";
+    ensure_dir_exists(dir);
     char lock_path[256];
-    snprintf(lock_path, sizeof(lock_path), "%s/.lock", data_dir ? data_dir : "data");
+    snprintf(lock_path, sizeof(lock_path), "%s/.lock", dir);
 
 #if defined(_WIN32) || defined(_WIN64)
     HANDLE hFile = CreateFileA(lock_path, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -210,6 +222,7 @@ static bool deserialize_bank(FILE *f, Bank *bank) {
 bool store_save_bank(const char *data_dir, const Bank *bank) {
     if (!bank) return false;
     const char *dir = data_dir ? data_dir : "data";
+    ensure_dir_exists(dir);
     char tmp_path[256], dat_path[256], bak_path[256];
     snprintf(tmp_path, sizeof(tmp_path), "%s/bank.dat.tmp", dir);
     snprintf(dat_path, sizeof(dat_path), "%s/bank.dat", dir);
@@ -324,6 +337,7 @@ bool store_load_bank(const char *data_dir, Bank *bank) {
 bool store_save_txns(const char *data_dir, const Bank *bank) {
     if (!bank) return false;
     const char *dir = data_dir ? data_dir : "data";
+    ensure_dir_exists(dir);
     char tmp_path[256], dat_path[256];
     snprintf(tmp_path, sizeof(tmp_path), "%s/txns.dat.tmp", dir);
     snprintf(dat_path, sizeof(dat_path), "%s/txns.dat", dir);

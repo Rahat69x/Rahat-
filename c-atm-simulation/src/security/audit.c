@@ -10,6 +10,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+#include <direct.h>
+#define MAKE_DIR(d) _mkdir(d)
+#else
+#include <sys/stat.h>
+#define MAKE_DIR(d) mkdir(d, 0755)
+#endif
+
+static void ensure_dir_exists(const char *dir) {
+    if (dir && dir[0] != '\0') {
+        MAKE_DIR(dir);
+    }
+}
+
 void audit_init(Bank *bank) {
     if (!bank) return;
     memset(bank->audit_head_hash, 0, HASH_SIZE);
@@ -36,6 +50,7 @@ bool audit_record(Bank *bank, const char *data_dir, const char *actor,
                   const char *action, const char *target, const char *detail) {
     if (!bank) return false;
     const char *dir = data_dir ? data_dir : "data";
+    ensure_dir_exists(dir);
     char log_path[256];
     snprintf(log_path, sizeof(log_path), "%s/audit.log", dir);
 
