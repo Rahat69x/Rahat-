@@ -1,0 +1,10 @@
+# c-atm-simulation .gitignore
+data/
+statements/
+*.exe
+*.o
+*.obj
+*.tmp
+*.bak
+*.lock
+*.log
