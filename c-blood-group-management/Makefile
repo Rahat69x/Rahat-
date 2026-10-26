@@ -36,16 +36,16 @@ all: dirs $(TARGET)
 dirs:
 	@$(MKDIR)
 
-$(TARGET): $(OBJS) $(BUILD_DIR)/main.o
+$(TARGET): $(OBJS) $(BUILD_DIR)/main.o | dirs
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(BUILD_DIR)/main.o
 
-$(BUILD_DIR)/%.o: %.c $(HEADERS)
+$(BUILD_DIR)/%.o: %.c $(HEADERS) | dirs
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-$(BUILD_DIR)/main.o: main.c $(HEADERS)
+$(BUILD_DIR)/main.o: main.c $(HEADERS) | dirs
 	$(CC) $(CFLAGS) $(INCLUDES) -c main.c -o $@
 
-$(TEST_TARGET): $(OBJS) tests/test_phase0.c tests/testing.h $(HEADERS)
+$(TEST_TARGET): $(OBJS) tests/test_phase0.c tests/testing.h $(HEADERS) | dirs
 	$(CC) $(CFLAGS) $(INCLUDES) $(OBJS) tests/test_phase0.c -o $@
 
 test: dirs $(TEST_TARGET)

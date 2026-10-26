@@ -98,6 +98,10 @@ mingw32-make clean
 ### Direct GCC Compilation (without make)
 
 ```bash
+# Create build directory if needed:
+# Linux/macOS: mkdir -p build
+# Windows cmd: if not exist build mkdir build
+
 # Compile the main executable
 gcc -std=c99 -Wall -Wextra -pedantic -O2 -I. -Itests common.c utils.c date.c bloodgroup.c context.c main.c -o build/bgms
 
