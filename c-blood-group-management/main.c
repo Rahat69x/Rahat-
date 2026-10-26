@@ -408,6 +408,31 @@ static void menu_compatibility_query(void) {
     }
 }
 
+/* Time: O(k), Space: O(1) */
+static void menu_display_by_blood_group(const SystemContext *ctx) {
+    char bg_buf[16];
+    int eof_flag = 0;
+
+    printf("\n--- DISPLAY DONORS BY BLOOD GROUP (CLASSIFIED BUCKETS) ---\n");
+    printf("Enter blood group to filter (A+, A-, B+, B-, AB+, AB-, O+, O-): ");
+    fflush(stdout);
+
+    Status st = utils_read_line(bg_buf, sizeof(bg_buf), &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Input line too long.\n");
+        return;
+    }
+
+    BloodGroup bg = bloodgroup_from_string(bg_buf);
+    if (bg == BG_INVALID) {
+        printf("[ERROR] Unrecognized blood group \"%s\".\n", bg_buf);
+        return;
+    }
+
+    donor_service_display_by_blood_group(ctx, bg);
+}
+
 /* Time: O(1) per menu iteration, Space: O(1) */
 int main(void) {
     SystemContext ctx;
@@ -426,26 +451,27 @@ int main(void) {
                today_str, ctx.donor_count, ctx.next_donor_id);
         printf("-----------------------------------------------------------------\n");
         printf("1. Register New Donor\n");
-        printf("2. Search Donor by ID\n");
-        printf("3. Search Donor by Phone\n");
+        printf("2. Search Donor by ID (BST Index)\n");
+        printf("3. Search Donor by Phone (Hash Table Index)\n");
         printf("4. Update Donor Information\n");
         printf("5. Delete Donor Record\n");
         printf("6. Display All Registered Donors (List Order)\n");
         printf("7. Display All Registered Donors (Sorted by ID - BST In-Order)\n");
-        printf("8. Query Blood Group Compatibility Matrix\n");
+        printf("8. Display Donors by Blood Group (Classified Buckets)\n");
+        printf("9. Query Blood Group Compatibility Matrix\n");
         printf("0. Exit System\n");
         printf("-----------------------------------------------------------------\n");
-        printf("Enter your choice (0-8): ");
+        printf("Enter your choice (0-9): ");
         fflush(stdout);
 
-        Status st = utils_read_int(&choice, 0, 8, &eof_flag);
+        Status st = utils_read_int(&choice, 0, 9, &eof_flag);
         if (eof_flag) {
             printf("\n[EOF Detected] Exiting system cleanly.\n");
             break;
         }
 
         if (st != ST_OK) {
-            printf("[ERROR] Please enter a valid menu number between 0 and 8.\n");
+            printf("[ERROR] Please enter a valid menu number between 0 and 9.\n");
             continue;
         }
 
@@ -477,6 +503,9 @@ int main(void) {
                 donor_service_display_sorted_by_id(&ctx);
                 break;
             case 8:
+                menu_display_by_blood_group(&ctx);
+                break;
+            case 9:
                 menu_compatibility_query();
                 break;
             default:

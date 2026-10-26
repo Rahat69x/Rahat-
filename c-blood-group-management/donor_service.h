@@ -5,6 +5,7 @@
 #include "donor.h"
 #include "bst.h"
 #include "hashtable.h"
+#include "buckets.h"
 
 /*
  * donor_service.h - Transactional business operations on donors.
@@ -20,7 +21,8 @@
  *  4. Preallocates new Donor node (ST_ERR_NOMEM)
  *  5. Inserts into BST index by ID (ST_ERR_NOMEM) - O(log n)
  *  6. Inserts into Hash Table index by Phone (ST_ERR_NOMEM) - O(1)
- *  7. Commit: links to list tail, increments donor_count, increments next_donor_id.
+ *  7. Inserts into 8-group classified bucket index (ST_ERR_NOMEM) - O(1)
+ *  8. Commit: links to list tail, increments donor_count, increments next_donor_id.
  * If anything fails before commit, state remains 100% unchanged.
  */
 Status donor_service_add(SystemContext *ctx, const char *name, int age, char gender,
@@ -33,7 +35,8 @@ Status donor_service_add(SystemContext *ctx, const char *name, int age, char gen
  *  2. Validates all new fields
  *  3. If phone changed, verifies uniqueness via Hash Table (ST_ERR_DUPLICATE) - O(1)
  *  4. Updates Hash Table index if phone changed
- *  5. Commit: mutates donor fields (BST key is immutable ID, tree structure preserved).
+ *  5. If blood group changed, moves donor between classified buckets - O(k)
+ *  6. Commit: mutates donor fields (BST key is immutable ID, tree structure preserved).
  */
 Status donor_service_update(SystemContext *ctx, int id, const char *name, int age, char gender,
                             BloodGroup bg, const char *phone, const char *city,
@@ -42,7 +45,7 @@ Status donor_service_update(SystemContext *ctx, int id, const char *name, int ag
 /*
  * Transactional Delete Donor:
  *  1. Finds donor by ID via BST index (ST_ERR_NOT_FOUND)
- *  2. Commit: deletes from Hash Table, deletes from BST index, unlinks from master list, frees donor memory, decrements donor_count.
+ *  2. Commit: deletes from buckets, Hash Table, BST index, unlinks from master list, frees donor memory, decrements donor_count.
  */
 Status donor_service_delete(SystemContext *ctx, int id);
 
@@ -69,5 +72,11 @@ void donor_service_display_all(const SystemContext *ctx);
  * Displays all active donors in ascending order of ID (via BST in-order traversal).
  */
 void donor_service_display_sorted_by_id(const SystemContext *ctx);
+
+/*
+ * Displays all donors belonging to a specific blood group (traversing only that bucket).
+ * Big-O: Time O(k) where k is the number of donors in that blood group.
+ */
+void donor_service_display_by_blood_group(const SystemContext *ctx, BloodGroup bg);
 
 #endif /* DONOR_SERVICE_H */
