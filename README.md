@@ -1,9 +1,9 @@
 # CSE103: Structured Programming (C)
 
 [![Language](https://img.shields.io/badge/Language-C99%20%2F%20C11-00599C?logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C_(programming_language))
-[![Course](https://img.shields.io/badge/Course-CSE103%20Structured%20Programming-2ea44f)](https://github.com/rahat4528/Rahat-)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)](https://github.com/rahat4528/Rahat-)
-[![Status](https://img.shields.io/badge/Status-Completed%20%26%20Maintained-brightgreen)](https://github.com/rahat4528/Rahat-)
+[![Course](https://img.shields.io/badge/Course-CSE103%20Structured%20Programming-2ea44f)](https://github.com/rahat4528/CSE103-Structured-Programming)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)](https://github.com/rahat4528/CSE103-Structured-Programming)
+[![Status](https://img.shields.io/badge/Status-Completed%20%26%20Maintained-brightgreen)](https://github.com/rahat4528/CSE103-Structured-Programming)
 
 Comprehensive repository for the **CSE103: Structured Programming** course. This repository contains complete lab problem sets, algorithmic problem solutions, foundational C programming exercises, and multi-module software systems developed using structured programming principles.
 
