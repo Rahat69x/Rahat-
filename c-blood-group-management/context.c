@@ -4,20 +4,43 @@
  * context.c - Implementation of SystemContext initialization and teardown.
  */
 
-/* Time: O(1), Space: O(1) */
+/* Time: O(HASH_SIZE + BG_COUNT + V + E), Space: O(1) */
 void context_init(SystemContext *ctx) {
     if (!ctx) return;
+    ctx->donor_list_head = NULL;
+    ctx->donor_list_tail = NULL;
+    ctx->donor_id_bst = NULL;
+    ht_init(&ctx->phone_table);
+    buckets_init(&ctx->bg_buckets);
+    queue_init(&ctx->normal_queue);
+    heap_init(&ctx->emergency_heap);
+    undo_init(&ctx->undo_stack);
+    citygraph_load_default_network(&ctx->city_graph);
+    history_init(&ctx->history);
+    ctx->donor_count = 0;
     ctx->next_donor_id = 1;
     ctx->next_request_id = 1;
     ctx->next_sequence = 1;
     ctx->fulfilled_count = 0;
 }
 
-/* Time: O(1), Space: O(1) */
+/* Time: O(HASH_SIZE + BG_COUNT + n + q + V + E + hist), Space: O(h) */
 void context_destroy(SystemContext *ctx) {
     if (!ctx) return;
-    /* In Phase 0, there are no dynamic structures to free.
-     * Future phases will deallocate list, BST, hash table, queues, etc. here. */
+    /* 1. Tear down index, queue, graph, history, and stack structures */
+    bst_free_all(&ctx->donor_id_bst);
+    ht_free_all(&ctx->phone_table);
+    buckets_free_all(&ctx->bg_buckets);
+    queue_free_all(&ctx->normal_queue);
+    heap_init(&ctx->emergency_heap);
+    undo_init(&ctx->undo_stack);
+    citygraph_free(&ctx->city_graph);
+    history_free_all(&ctx->history);
+
+    /* 2. Deallocate all Donors via master singly linked list */
+    donor_list_free_all(&ctx->donor_list_head, &ctx->donor_list_tail);
+
+    ctx->donor_count = 0;
     ctx->next_donor_id = 1;
     ctx->next_request_id = 1;
     ctx->next_sequence = 1;
