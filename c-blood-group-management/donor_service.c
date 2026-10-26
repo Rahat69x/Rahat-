@@ -4,7 +4,7 @@
  * donor_service.c - Transactional donor operations implementation.
  */
 
-/* Time: O(log n) avg with BST, Space: O(1) */
+/* Time: O(log n) avg with BST and Hash Table, Space: O(1) */
 Status donor_service_add(SystemContext *ctx, const char *name, int age, char gender,
                          BloodGroup bg, const char *phone, const char *city,
                          Date last_donation, int available, Date today, int *out_id) {
@@ -22,12 +22,12 @@ Status donor_service_add(SystemContext *ctx, const char *name, int age, char gen
         return st;
     }
 
-    /* 3. Phone uniqueness check (linear scan in Phase 1-2; hash in Phase 3) */
-    if (donor_list_find_by_phone(ctx->donor_list_head, phone)) {
+    /* 3. Phone uniqueness check via Hash Table: O(1) average */
+    if (ht_search(&ctx->phone_table, phone) != NULL) {
         return ST_ERR_DUPLICATE;
     }
 
-    /* 4. Prepare phase: allocate node up front */
+    /* 4. Prepare phase: allocate Donor node */
     Donor *new_donor = NULL;
     st = donor_new(&new_donor, ctx->next_donor_id, name, age, gender,
                    bg, phone, city, last_donation, available);
@@ -35,14 +35,22 @@ Status donor_service_add(SystemContext *ctx, const char *name, int age, char gen
         return st;
     }
 
-    /* 5. Prepare phase: insert into BST ID index */
+    /* 5. Prepare phase: insert into BST ID index: O(log n) average */
     st = bst_insert(&ctx->donor_id_bst, new_donor);
     if (st != ST_OK) {
         donor_free(new_donor);
         return st;
     }
 
-    /* 6. Commit phase: link into master list and update counters */
+    /* 6. Prepare phase: insert into Hash Table phone index: O(1) average */
+    st = ht_insert(&ctx->phone_table, new_donor);
+    if (st != ST_OK) {
+        bst_delete(&ctx->donor_id_bst, new_donor->id);
+        donor_free(new_donor);
+        return st;
+    }
+
+    /* 7. Commit phase: link into master list and update counters (cannot fail) */
     donor_list_append(&ctx->donor_list_head, &ctx->donor_list_tail, new_donor);
     if (out_id) {
         *out_id = ctx->next_donor_id;
@@ -72,20 +80,27 @@ Status donor_service_update(SystemContext *ctx, int id, const char *name, int ag
         return st;
     }
 
-    /* 3. If phone changed, verify uniqueness against other donors */
+    /* 3. If phone changed, verify uniqueness and update Hash Table index */
     if (strcmp(d->phone, phone) != 0) {
-        Donor *existing = donor_list_find_by_phone(ctx->donor_list_head, phone);
-        if (existing) {
+        if (ht_search(&ctx->phone_table, phone) != NULL) {
             return ST_ERR_DUPLICATE;
+        }
+
+        /* Update hash table: remove old phone, insert with new phone */
+        ht_delete(&ctx->phone_table, d->phone);
+        utils_copy_string(d->phone, phone, sizeof(d->phone));
+        st = ht_insert(&ctx->phone_table, d);
+        if (st != ST_OK) {
+            /* If insertion failed, table state must still be consistent */
+            return st;
         }
     }
 
-    /* 4. Commit phase: mutate fields (ID immutable -> BST structure preserved) */
+    /* 4. Commit phase: mutate remaining fields (ID immutable -> BST structure preserved) */
     utils_copy_string(d->name, name, sizeof(d->name));
     d->age = age;
     d->gender = (char)toupper((unsigned char)gender);
     d->blood_group = bg;
-    utils_copy_string(d->phone, phone, sizeof(d->phone));
     utils_copy_string(d->city, city, sizeof(d->city));
     d->last_donation = last_donation;
     d->available = available;
@@ -103,7 +118,8 @@ Status donor_service_delete(SystemContext *ctx, int id) {
         return ST_ERR_NOT_FOUND;
     }
 
-    /* 2. Commit phase: remove from BST index, unlink from master list, free */
+    /* 2. Commit phase: remove from Hash Table, BST index, unlink from master list, free */
+    ht_delete(&ctx->phone_table, d->phone);
     bst_delete(&ctx->donor_id_bst, id);
     donor_list_unlink(&ctx->donor_list_head, &ctx->donor_list_tail, d);
     donor_free(d);
@@ -125,12 +141,12 @@ Status donor_service_find_by_id(const SystemContext *ctx, int id, Donor **out_do
     return ST_OK;
 }
 
-/* Time: O(n), Space: O(1) where n is donor count */
+/* Time: O(1) average, O(n) worst; Space: O(1) */
 Status donor_service_find_by_phone(const SystemContext *ctx, const char *phone, Donor **out_donor) {
     if (!ctx || !phone || !out_donor) return ST_ERR_INVALID;
     *out_donor = NULL;
 
-    Donor *d = donor_list_find_by_phone(ctx->donor_list_head, phone);
+    Donor *d = ht_search(&ctx->phone_table, phone);
     if (!d) {
         return ST_ERR_NOT_FOUND;
     }
