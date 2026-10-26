@@ -10,6 +10,8 @@
 #include "queue.h"
 #include "heap.h"
 #include "undo.h"
+#include "citygraph.h"
+#include "history.h"
 
 /*
  * context.h - Master SystemContext definition and life-cycle management.
@@ -26,6 +28,8 @@ typedef struct SystemContext {
     RequestQueue normal_queue;    /* FIFO queue for normal blood requests */
     RequestHeap emergency_heap;   /* Max-heap priority queue for emergency requests */
     UndoStack undo_stack;         /* Bounded LIFO stack for reversing fulfillments */
+    CityGraph city_graph;         /* Feature F1: Weighted city graph for nearest-donor ranking */
+    HistoryList history;          /* Feature F2: Bounded doubly linked list of fulfilled requests */
     int donor_count;              /* Active donor count */
     int next_donor_id;            /* Monotonically increasing ID counter (never reused) */
     int next_request_id;          /* Request ID counter */

@@ -2,7 +2,8 @@
 #include "donor_service.h"
 
 /*
- * request_service.c - Implementation of request submission, matching algorithm, and undo.
+ * request_service.c - Implementation of request submission, priority matching with
+ * Dijkstra nearest-donor ranking (Feature F1), undo, and history logging (Feature F2).
  */
 
 /* Time: O(log n) for emergency or O(1) for normal, Space: O(1) */
@@ -44,7 +45,15 @@ Status request_service_add(SystemContext *ctx, const char *patient_name, BloodGr
     return ST_OK;
 }
 
-/* Time: O(units * donors_in_buckets), Space: O(units) */
+/* Candidate helper for ranking */
+typedef struct CandidateDonor {
+    Donor *donor;
+    Date prev_date;
+    int is_exact_match;
+    int distance_km;
+} CandidateDonor;
+
+/* Time: O(candidates * log(candidates)), Space: O(candidates) */
 Status request_service_process_next(SystemContext *ctx, Date today, FulfillmentDetails *out_details) {
     if (!ctx || !out_details) return ST_ERR_INVALID;
 
@@ -64,49 +73,75 @@ Status request_service_process_next(SystemContext *ctx, Date today, FulfillmentD
         return ST_ERR_EMPTY; /* No pending requests */
     }
 
-    /* 2. Prepare Phase: Match compatible eligible donors */
+    /* 2. Feature F1: Dijkstra Road Distance Computation from Patient City */
+    int road_dist[MAX_CITIES];
+    int patient_city_idx = citygraph_find_city(&ctx->city_graph, req.city);
+    if (patient_city_idx != -1) {
+        citygraph_dijkstra(&ctx->city_graph, patient_city_idx, road_dist);
+    } else {
+        for (int i = 0; i < MAX_CITIES; i++) {
+            road_dist[i] = INF_KM;
+        }
+    }
+
+    /* 3. Prepare Phase: Gather all eligible compatible candidate donors */
     BloodGroup comp_groups[BG_COUNT];
     int comp_count = bloodgroup_get_compatible_donors(req.blood_group, comp_groups);
 
-    Donor *candidates[MAX_UNITS];
-    Date prev_dates[MAX_UNITS];
-    int matched = 0;
+    CandidateDonor pool[128];
+    int pool_count = 0;
 
-    for (int g = 0; g < comp_count && matched < req.units; g++) {
+    for (int g = 0; g < comp_count && pool_count < 128; g++) {
         BloodGroup target_bg = comp_groups[g];
         const BucketNode *curr = buckets_get_head(&ctx->bg_buckets, target_bg);
 
-        while (curr && matched < req.units) {
+        while (curr && pool_count < 128) {
             Donor *d = curr->donor;
 
-            /* Check availability and 90-day cooldown eligibility */
             if (bloodgroup_is_eligible(d->available, d->last_donation, today)) {
-                /* Check not already selected */
-                int already_picked = 0;
-                for (int i = 0; i < matched; i++) {
-                    if (candidates[i] == d) {
-                        already_picked = 1;
-                        break;
-                    }
-                }
+                /* Determine distance */
+                int d_city_idx = citygraph_find_city(&ctx->city_graph, d->city);
+                int km = (patient_city_idx != -1 && d_city_idx != -1) ? road_dist[d_city_idx] : INF_KM;
 
-                if (!already_picked) {
-                    candidates[matched] = d;
-                    prev_dates[matched] = d->last_donation;
-                    matched++;
-                }
+                pool[pool_count].donor = d;
+                pool[pool_count].prev_date = d->last_donation;
+                pool[pool_count].is_exact_match = (d->blood_group == req.blood_group);
+                pool[pool_count].distance_km = km;
+                pool_count++;
             }
             curr = curr->next;
         }
     }
 
-    /* 3. Transactional check: insufficient donors available */
-    if (matched < req.units) {
-        /* State 100% untouched. Request remains at front of queue/heap */
-        return ST_ERR_NO_DONORS;
+    /* 4. Check if sufficient eligible donors were found */
+    if (pool_count < req.units) {
+        return ST_ERR_NO_DONORS; /* Transactional rollback: zero mutations, request remains pending */
     }
 
-    /* 4. Commit Phase: Dequeue request and update donor records */
+    /* 5. Rank Candidates:
+     *  Primary: Exact blood group match first (1 before 0)
+     *  Secondary: Shortest road distance (smaller km first)
+     */
+    for (int i = 0; i < pool_count - 1; i++) {
+        for (int j = i + 1; j < pool_count; j++) {
+            int swap_needed = 0;
+            if (pool[i].is_exact_match < pool[j].is_exact_match) {
+                swap_needed = 1;
+            } else if (pool[i].is_exact_match == pool[j].is_exact_match) {
+                if (pool[i].distance_km > pool[j].distance_km) {
+                    swap_needed = 1;
+                }
+            }
+
+            if (swap_needed) {
+                CandidateDonor tmp = pool[i];
+                pool[i] = pool[j];
+                pool[j] = tmp;
+            }
+        }
+    }
+
+    /* 6. Commit Phase: Dequeue request and update donor records */
     BloodRequest extracted;
     if (was_emergency) {
         heap_extract_max(&ctx->emergency_heap, &extracted);
@@ -115,26 +150,44 @@ Status request_service_process_next(SystemContext *ctx, Date today, FulfillmentD
     }
 
     out_details->request = extracted;
-    out_details->matched_count = matched;
+    out_details->matched_count = req.units;
     out_details->was_emergency = was_emergency;
 
-    for (int i = 0; i < matched; i++) {
-        out_details->matched_donors[i] = candidates[i];
-        out_details->prev_donations[i] = prev_dates[i];
-        /* Update donor's last donation date to today */
-        candidates[i]->last_donation = today;
+    for (int i = 0; i < req.units; i++) {
+        Donor *d = pool[i].donor;
+        out_details->matched_donors[i] = d;
+        out_details->prev_donations[i] = pool[i].prev_date;
+        d->last_donation = today;
     }
 
-    /* 5. Push onto Undo Stack */
+    /* 7. Push onto Undo Stack */
     UndoRecord undo_rec;
     undo_rec.request = extracted;
-    undo_rec.matched_count = matched;
+    undo_rec.matched_count = req.units;
     undo_rec.was_emergency = was_emergency;
-    for (int i = 0; i < matched; i++) {
-        undo_rec.matched_donor_ids[i] = candidates[i]->id;
-        undo_rec.prev_donations[i] = prev_dates[i];
+    for (int i = 0; i < req.units; i++) {
+        undo_rec.matched_donor_ids[i] = pool[i].donor->id;
+        undo_rec.prev_donations[i] = pool[i].prev_date;
     }
     undo_push(&ctx->undo_stack, &undo_rec);
+
+    /* 8. Feature F2: Log to Doubly Linked Fulfilment History */
+    FulfilmentRecord f_rec;
+    f_rec.request_id = extracted.id;
+    utils_copy_string(f_rec.patient_name, extracted.patient_name, sizeof(f_rec.patient_name));
+    f_rec.blood_group = extracted.blood_group;
+    f_rec.units = extracted.units;
+    utils_copy_string(f_rec.hospital, extracted.hospital, sizeof(f_rec.hospital));
+    utils_copy_string(f_rec.patient_city, extracted.city, sizeof(f_rec.patient_city));
+    f_rec.fulfillment_date = today;
+
+    for (int i = 0; i < req.units; i++) {
+        f_rec.donor_ids[i] = pool[i].donor->id;
+        utils_copy_string(f_rec.donor_names[i], pool[i].donor->name, sizeof(f_rec.donor_names[i]));
+        utils_copy_string(f_rec.donor_cities[i], pool[i].donor->city, sizeof(f_rec.donor_cities[i]));
+        f_rec.donor_distances_km[i] = pool[i].distance_km;
+    }
+    history_append(&ctx->history, &f_rec);
 
     ctx->fulfilled_count++;
     return ST_OK;
@@ -147,7 +200,7 @@ Status request_service_undo(SystemContext *ctx, BloodRequest *out_restored_req) 
     UndoRecord rec;
     Status st = undo_pop(&ctx->undo_stack, &rec);
     if (st != ST_OK) {
-        return st; /* ST_ERR_EMPTY if no undo operations available */
+        return st; /* ST_ERR_EMPTY */
     }
 
     /* 1. Restore donors' previous donation dates */
@@ -159,7 +212,11 @@ Status request_service_undo(SystemContext *ctx, BloodRequest *out_restored_req) 
         }
     }
 
-    /* 2. Re-insert request into originating queue/heap */
+    /* 2. Remove most recent record from Doubly Linked History */
+    FulfilmentRecord rem_hist;
+    history_remove_tail(&ctx->history, &rem_hist);
+
+    /* 3. Re-insert request into originating queue/heap */
     if (rec.was_emergency) {
         heap_insert(&ctx->emergency_heap, &rec.request);
     } else {

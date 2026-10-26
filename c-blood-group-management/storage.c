@@ -1,10 +1,10 @@
 #include "storage.h"
 
 /*
- * storage.c - Atomic file serialization and load implementation.
+ * storage.c - Atomic file serialization and load implementation including Feature F2 History.
  */
 
-/* Time: O(n + q + h), Space: O(1) */
+/* Time: O(n + q + h + hist), Space: O(1) */
 Status storage_save(const SystemContext *ctx, const char *filepath) {
     if (!ctx || !filepath) return ST_ERR_INVALID;
 
@@ -64,6 +64,24 @@ Status storage_save(const SystemContext *ctx, const char *filepath) {
                 r->hospital, r->city, (int)r->urgency, r->arrival_sequence, d_str);
     }
 
+    /* 5. Fulfilment History Section (Doubly Linked List) */
+    fprintf(f, "[FULFILMENT_HISTORY]\n");
+    const HistoryNode *curr_h = ctx->history.head;
+    while (curr_h) {
+        const FulfilmentRecord *r = &curr_h->record;
+        char d_str[16];
+        date_format(r->fulfillment_date, d_str, sizeof(d_str));
+        fprintf(f, "%d|%s|%d|%d|%s|%s|%s",
+                r->request_id, r->patient_name, (int)r->blood_group, r->units,
+                r->hospital, r->patient_city, d_str);
+        for (int i = 0; i < r->units; i++) {
+            fprintf(f, "|%d|%s|%s|%d",
+                    r->donor_ids[i], r->donor_names[i], r->donor_cities[i], r->donor_distances_km[i]);
+        }
+        fprintf(f, "\n");
+        curr_h = curr_h->next;
+    }
+
     fprintf(f, "[END]\n");
     fflush(f);
     fclose(f);
@@ -78,7 +96,7 @@ Status storage_save(const SystemContext *ctx, const char *filepath) {
     return ST_OK;
 }
 
-/* Time: O(lines), Space: O(n) heap memory for reconstructed structures */
+/* Time: O(lines), Space: O(n + hist) heap memory */
 Status storage_load(SystemContext *ctx, const char *filepath) {
     if (!ctx || !filepath) return ST_ERR_INVALID;
 
@@ -90,8 +108,8 @@ Status storage_load(SystemContext *ctx, const char *filepath) {
     SystemContext temp;
     context_init(&temp);
 
-    char line[512];
-    int section = 0; /* 0=None, 1=System, 2=Donors, 3=NormalQueue, 4=EmergencyHeap */
+    char line[1024];
+    int section = 0; /* 0=None, 1=System, 2=Donors, 3=NormalQueue, 4=EmergencyHeap, 5=History */
     Date today = date_get_today();
     int parse_error = 0;
 
@@ -111,12 +129,14 @@ Status storage_load(SystemContext *ctx, const char *filepath) {
         } else if (strcmp(line, "[EMERGENCY_HEAP]") == 0) {
             section = 4;
             continue;
+        } else if (strcmp(line, "[FULFILMENT_HISTORY]") == 0) {
+            section = 5;
+            continue;
         } else if (strcmp(line, "[END]") == 0) {
             break;
         }
 
         if (section == 1) {
-            /* next_donor_id|next_request_id|next_sequence|fulfilled_count */
             int next_d, next_r, next_s, fulf;
             if (sscanf(line, "%d|%d|%d|%d", &next_d, &next_r, &next_s, &fulf) == 4) {
                 temp.next_donor_id = next_d;
@@ -128,14 +148,11 @@ Status storage_load(SystemContext *ctx, const char *filepath) {
                 break;
             }
         } else if (section == 2) {
-            /* id|name|age|gender|blood_group|phone|city|last_donation|available */
             char name[MAX_NAME_LEN], phone[MAX_PHONE_LEN], city[MAX_CITY_LEN], date_str[32];
             int id, age, bg_int, avail;
             char gender;
 
-            /* Parse tokens by splitting on '|' */
-            char *p = line;
-            char *tok = strtok(p, "|");
+            char *tok = strtok(line, "|");
             if (!tok) { parse_error = 1; break; }
             id = atoi(tok);
 
@@ -183,7 +200,6 @@ Status storage_load(SystemContext *ctx, const char *filepath) {
                 break;
             }
 
-            /* Allocate donor node and reconstruct all 4 donor structures */
             Donor *d = NULL;
             if (donor_new(&d, id, name, age, gender, bg, phone, city, last_don, avail) != ST_OK) {
                 parse_error = 1;
@@ -196,7 +212,6 @@ Status storage_load(SystemContext *ctx, const char *filepath) {
             buckets_insert(&temp.bg_buckets, d);
             temp.donor_count++;
         } else if (section == 3 || section == 4) {
-            /* id|patient_name|blood_group|units|hospital|city|urgency|arrival_sequence|request_date */
             int id, bg_int, units, urg_int, seq;
             char pat_name[MAX_NAME_LEN], hosp[MAX_HOSPITAL_LEN], city[MAX_CITY_LEN], date_str[32];
 
@@ -247,6 +262,56 @@ Status storage_load(SystemContext *ctx, const char *filepath) {
             } else {
                 heap_insert(&temp.emergency_heap, &req);
             }
+        } else if (section == 5) {
+            /* Fulfilment Record */
+            FulfilmentRecord f_rec;
+            char *tok = strtok(line, "|");
+            if (!tok) { parse_error = 1; break; }
+            f_rec.request_id = atoi(tok);
+
+            tok = strtok(NULL, "|");
+            if (!tok) { parse_error = 1; break; }
+            utils_copy_string(f_rec.patient_name, tok, sizeof(f_rec.patient_name));
+
+            tok = strtok(NULL, "|");
+            if (!tok) { parse_error = 1; break; }
+            f_rec.blood_group = (BloodGroup)atoi(tok);
+
+            tok = strtok(NULL, "|");
+            if (!tok) { parse_error = 1; break; }
+            f_rec.units = atoi(tok);
+
+            tok = strtok(NULL, "|");
+            if (!tok) { parse_error = 1; break; }
+            utils_copy_string(f_rec.hospital, tok, sizeof(f_rec.hospital));
+
+            tok = strtok(NULL, "|");
+            if (!tok) { parse_error = 1; break; }
+            utils_copy_string(f_rec.patient_city, tok, sizeof(f_rec.patient_city));
+
+            tok = strtok(NULL, "|");
+            if (!tok) { parse_error = 1; break; }
+            date_parse_user(tok, &f_rec.fulfillment_date, today);
+
+            for (int i = 0; i < f_rec.units; i++) {
+                tok = strtok(NULL, "|");
+                if (!tok) break;
+                f_rec.donor_ids[i] = atoi(tok);
+
+                tok = strtok(NULL, "|");
+                if (!tok) break;
+                utils_copy_string(f_rec.donor_names[i], tok, sizeof(f_rec.donor_names[i]));
+
+                tok = strtok(NULL, "|");
+                if (!tok) break;
+                utils_copy_string(f_rec.donor_cities[i], tok, sizeof(f_rec.donor_cities[i]));
+
+                tok = strtok(NULL, "|");
+                if (!tok) break;
+                f_rec.donor_distances_km[i] = atoi(tok);
+            }
+
+            history_append(&temp.history, &f_rec);
         }
     }
 
@@ -257,7 +322,6 @@ Status storage_load(SystemContext *ctx, const char *filepath) {
         return ST_ERR_FORMAT;
     }
 
-    /* Success: destroy current context and adopt temp context */
     context_destroy(ctx);
     *ctx = temp;
 

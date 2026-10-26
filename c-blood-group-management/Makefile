@@ -22,6 +22,7 @@ ifeq ($(OS),Windows_NT)
     TEST_REQ_SRV = $(BUILD_DIR)/test_request_service.exe
     TEST_UNDO = $(BUILD_DIR)/test_undo.exe
     TEST_STORAGE = $(BUILD_DIR)/test_storage.exe
+    TEST_FEATURES = $(BUILD_DIR)/test_features.exe
     MKDIR = if not exist $(BUILD_DIR) mkdir $(BUILD_DIR)
     RM = if exist $(BUILD_DIR) rd /s /q $(BUILD_DIR)
     RUN_TEST_PHASE0 = $(TEST_PHASE0)
@@ -34,6 +35,7 @@ ifeq ($(OS),Windows_NT)
     RUN_TEST_REQ_SRV = $(TEST_REQ_SRV)
     RUN_TEST_UNDO = $(TEST_UNDO)
     RUN_TEST_STORAGE = $(TEST_STORAGE)
+    RUN_TEST_FEATURES = $(TEST_FEATURES)
 else
     TARGET = $(BUILD_DIR)/bgms
     TEST_PHASE0 = $(BUILD_DIR)/test_phase0
@@ -46,6 +48,7 @@ else
     TEST_REQ_SRV = $(BUILD_DIR)/test_request_service
     TEST_UNDO = $(BUILD_DIR)/test_undo
     TEST_STORAGE = $(BUILD_DIR)/test_storage
+    TEST_FEATURES = $(BUILD_DIR)/test_features
     MKDIR = mkdir -p $(BUILD_DIR)
     RM = rm -rf $(BUILD_DIR)
     RUN_TEST_PHASE0 = ./$(TEST_PHASE0)
@@ -58,12 +61,13 @@ else
     RUN_TEST_REQ_SRV = ./$(TEST_REQ_SRV)
     RUN_TEST_UNDO = ./$(TEST_UNDO)
     RUN_TEST_STORAGE = ./$(TEST_STORAGE)
+    RUN_TEST_FEATURES = ./$(TEST_FEATURES)
 endif
 
 # Core Sources & Headers
-SRCS = common.c utils.c date.c bloodgroup.c donor.c bst.c hashtable.c buckets.c request.c queue.c heap.c undo.c storage.c context.c donor_service.c request_service.c
+SRCS = common.c utils.c date.c bloodgroup.c donor.c bst.c hashtable.c buckets.c request.c queue.c heap.c undo.c citygraph.c history.c storage.c context.c donor_service.c request_service.c
 OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))
-HEADERS = common.h utils.h date.h bloodgroup.h donor.h bst.h hashtable.h buckets.h request.h queue.h heap.h undo.h storage.h context.h donor_service.h request_service.h
+HEADERS = common.h utils.h date.h bloodgroup.h donor.h bst.h hashtable.h buckets.h request.h queue.h heap.h undo.h citygraph.h history.h storage.h context.h donor_service.h request_service.h
 
 .PHONY: all test valgrind sanitize clean dirs
 
@@ -111,7 +115,10 @@ $(TEST_UNDO): $(OBJS) tests/test_undo.c tests/testing.h $(HEADERS) | dirs
 $(TEST_STORAGE): $(OBJS) tests/test_storage.c tests/testing.h $(HEADERS) | dirs
 	$(CC) $(CFLAGS) $(INCLUDES) $(OBJS) tests/test_storage.c -o $@
 
-test: dirs $(TEST_PHASE0) $(TEST_DONOR) $(TEST_BST) $(TEST_HT) $(TEST_BUCKETS) $(TEST_QUEUE) $(TEST_HEAP) $(TEST_REQ_SRV) $(TEST_UNDO) $(TEST_STORAGE)
+$(TEST_FEATURES): $(OBJS) tests/test_features.c tests/testing.h $(HEADERS) | dirs
+	$(CC) $(CFLAGS) $(INCLUDES) $(OBJS) tests/test_features.c -o $@
+
+test: dirs $(TEST_PHASE0) $(TEST_DONOR) $(TEST_BST) $(TEST_HT) $(TEST_BUCKETS) $(TEST_QUEUE) $(TEST_HEAP) $(TEST_REQ_SRV) $(TEST_UNDO) $(TEST_STORAGE) $(TEST_FEATURES)
 	@echo "--- Running Phase 0 Unit Tests ---"
 	$(RUN_TEST_PHASE0)
 	@echo "--- Running Phase 1 Donor Unit Tests ---"
@@ -132,6 +139,8 @@ test: dirs $(TEST_PHASE0) $(TEST_DONOR) $(TEST_BST) $(TEST_HT) $(TEST_BUCKETS) $
 	$(RUN_TEST_UNDO)
 	@echo "--- Running Phase 9 Storage Unit Tests ---"
 	$(RUN_TEST_STORAGE)
+	@echo "--- Running Phase 10 Feature Pack F1 & F2 Unit Tests ---"
+	$(RUN_TEST_FEATURES)
 
 clean:
 	@$(RM)
