@@ -1,0 +1,28 @@
+# ==============================================================================
+# .gitignore for Blood Group Management System
+# ==============================================================================
+
+# Build output directory
+build/
+
+# Compiled objects, binaries, and libraries
+*.o
+*.obj
+*.exe
+*.out
+*.tmp
+
+# Runtime save and state files
+bgms_data.txt
+bgms_data.tmp
+
+# Test binaries (POSIX without extension)
+test_*
+!*.c
+!*.h
+
+# Editor and IDE artifacts
+.vscode/
+.idea/
+*.swp
+*~
