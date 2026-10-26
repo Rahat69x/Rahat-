@@ -3,6 +3,7 @@
 
 #include "context.h"
 #include "donor.h"
+#include "bst.h"
 
 /*
  * donor_service.h - Transactional business operations on donors.
@@ -16,7 +17,8 @@
  *  2. Validates all donor fields
  *  3. Verifies phone number uniqueness (ST_ERR_DUPLICATE)
  *  4. Preallocates new Donor node (ST_ERR_NOMEM)
- *  5. Commit: links to list tail, increments donor_count, increments next_donor_id.
+ *  5. Inserts into BST index by ID (ST_ERR_NOMEM)
+ *  6. Commit: links to list tail, increments donor_count, increments next_donor_id.
  * If anything fails before commit, state remains 100% unchanged.
  */
 Status donor_service_add(SystemContext *ctx, const char *name, int age, char gender,
@@ -25,10 +27,10 @@ Status donor_service_add(SystemContext *ctx, const char *name, int age, char gen
 
 /*
  * Transactional Update Donor:
- *  1. Finds donor by ID (ST_ERR_NOT_FOUND)
+ *  1. Finds donor by ID via BST index (ST_ERR_NOT_FOUND)
  *  2. Validates all new fields
  *  3. If phone changed, verifies uniqueness (ST_ERR_DUPLICATE)
- *  4. Commit: mutates donor fields.
+ *  4. Commit: mutates donor fields (BST key is immutable ID, tree structure preserved).
  */
 Status donor_service_update(SystemContext *ctx, int id, const char *name, int age, char gender,
                             BloodGroup bg, const char *phone, const char *city,
@@ -36,13 +38,14 @@ Status donor_service_update(SystemContext *ctx, int id, const char *name, int ag
 
 /*
  * Transactional Delete Donor:
- *  1. Finds donor by ID (ST_ERR_NOT_FOUND)
- *  2. Commit: unlinks from list, frees donor memory, decrements donor_count.
+ *  1. Finds donor by ID via BST index (ST_ERR_NOT_FOUND)
+ *  2. Commit: deletes from BST index, unlinks from master list, frees donor memory, decrements donor_count.
  */
 Status donor_service_delete(SystemContext *ctx, int id);
 
 /*
- * Lookup donor by ID.
+ * Lookup donor by ID via BST Index.
+ * Big-O: Time O(log n) average.
  * Returns ST_OK and sets *out_donor if found, ST_ERR_NOT_FOUND otherwise.
  */
 Status donor_service_find_by_id(const SystemContext *ctx, int id, Donor **out_donor);
@@ -57,5 +60,10 @@ Status donor_service_find_by_phone(const SystemContext *ctx, const char *phone, 
  * Displays all active donors in list order (calls recursive traversal).
  */
 void donor_service_display_all(const SystemContext *ctx);
+
+/*
+ * Displays all active donors in ascending order of ID (via BST in-order traversal).
+ */
+void donor_service_display_sorted_by_id(const SystemContext *ctx);
 
 #endif /* DONOR_SERVICE_H */

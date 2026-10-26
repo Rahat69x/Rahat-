@@ -9,6 +9,7 @@ void context_init(SystemContext *ctx) {
     if (!ctx) return;
     ctx->donor_list_head = NULL;
     ctx->donor_list_tail = NULL;
+    ctx->donor_id_bst = NULL;
     ctx->donor_count = 0;
     ctx->next_donor_id = 1;
     ctx->next_request_id = 1;
@@ -16,11 +17,15 @@ void context_init(SystemContext *ctx) {
     ctx->fulfilled_count = 0;
 }
 
-/* Time: O(n), Space: O(1) where n is total donors */
+/* Time: O(n), Space: O(h) where n is total donors */
 void context_destroy(SystemContext *ctx) {
     if (!ctx) return;
-    /* Deallocate all Donors via master singly linked list */
+    /* 1. Tear down index trees first (they do NOT own donor memory) */
+    bst_free_all(&ctx->donor_id_bst);
+
+    /* 2. Deallocate all Donors via master singly linked list (owner of memory) */
     donor_list_free_all(&ctx->donor_list_head, &ctx->donor_list_tail);
+
     ctx->donor_count = 0;
     ctx->next_donor_id = 1;
     ctx->next_request_id = 1;

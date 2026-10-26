@@ -431,20 +431,21 @@ int main(void) {
         printf("4. Update Donor Information\n");
         printf("5. Delete Donor Record\n");
         printf("6. Display All Registered Donors (List Order)\n");
-        printf("7. Query Blood Group Compatibility Matrix\n");
+        printf("7. Display All Registered Donors (Sorted by ID - BST In-Order)\n");
+        printf("8. Query Blood Group Compatibility Matrix\n");
         printf("0. Exit System\n");
         printf("-----------------------------------------------------------------\n");
-        printf("Enter your choice (0-7): ");
+        printf("Enter your choice (0-8): ");
         fflush(stdout);
 
-        Status st = utils_read_int(&choice, 0, 7, &eof_flag);
+        Status st = utils_read_int(&choice, 0, 8, &eof_flag);
         if (eof_flag) {
             printf("\n[EOF Detected] Exiting system cleanly.\n");
             break;
         }
 
         if (st != ST_OK) {
-            printf("[ERROR] Please enter a valid menu number between 0 and 7.\n");
+            printf("[ERROR] Please enter a valid menu number between 0 and 8.\n");
             continue;
         }
 
@@ -473,6 +474,9 @@ int main(void) {
                 donor_service_display_all(&ctx);
                 break;
             case 7:
+                donor_service_display_sorted_by_id(&ctx);
+                break;
+            case 8:
                 menu_compatibility_query();
                 break;
             default:

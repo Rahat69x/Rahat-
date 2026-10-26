@@ -4,7 +4,7 @@
  * donor_service.c - Transactional donor operations implementation.
  */
 
-/* Time: O(n), Space: O(1) where n is donor count (phone scan in Phase 1) */
+/* Time: O(log n) avg with BST, Space: O(1) */
 Status donor_service_add(SystemContext *ctx, const char *name, int age, char gender,
                          BloodGroup bg, const char *phone, const char *city,
                          Date last_donation, int available, Date today, int *out_id) {
@@ -22,7 +22,7 @@ Status donor_service_add(SystemContext *ctx, const char *name, int age, char gen
         return st;
     }
 
-    /* 3. Phone uniqueness check (linear scan in Phase 1; hash in Phase 3) */
+    /* 3. Phone uniqueness check (linear scan in Phase 1-2; hash in Phase 3) */
     if (donor_list_find_by_phone(ctx->donor_list_head, phone)) {
         return ST_ERR_DUPLICATE;
     }
@@ -35,7 +35,14 @@ Status donor_service_add(SystemContext *ctx, const char *name, int age, char gen
         return st;
     }
 
-    /* 5. Commit phase: link into master list and update counters */
+    /* 5. Prepare phase: insert into BST ID index */
+    st = bst_insert(&ctx->donor_id_bst, new_donor);
+    if (st != ST_OK) {
+        donor_free(new_donor);
+        return st;
+    }
+
+    /* 6. Commit phase: link into master list and update counters */
     donor_list_append(&ctx->donor_list_head, &ctx->donor_list_tail, new_donor);
     if (out_id) {
         *out_id = ctx->next_donor_id;
@@ -46,14 +53,14 @@ Status donor_service_add(SystemContext *ctx, const char *name, int age, char gen
     return ST_OK;
 }
 
-/* Time: O(n), Space: O(1) where n is donor count */
+/* Time: O(log n) avg, Space: O(1) */
 Status donor_service_update(SystemContext *ctx, int id, const char *name, int age, char gender,
                             BloodGroup bg, const char *phone, const char *city,
                             Date last_donation, int available, Date today) {
     if (!ctx || id <= 0) return ST_ERR_INVALID;
 
-    /* 1. Find target donor */
-    Donor *d = donor_list_find_by_id(ctx->donor_list_head, id);
+    /* 1. Find target donor via BST ID index */
+    Donor *d = bst_search(ctx->donor_id_bst, id);
     if (!d) {
         return ST_ERR_NOT_FOUND;
     }
@@ -73,7 +80,7 @@ Status donor_service_update(SystemContext *ctx, int id, const char *name, int ag
         }
     }
 
-    /* 4. Commit phase: mutate fields (in Phase 1; index relinking added in later phases) */
+    /* 4. Commit phase: mutate fields (ID immutable -> BST structure preserved) */
     utils_copy_string(d->name, name, sizeof(d->name));
     d->age = age;
     d->gender = (char)toupper((unsigned char)gender);
@@ -86,16 +93,18 @@ Status donor_service_update(SystemContext *ctx, int id, const char *name, int ag
     return ST_OK;
 }
 
-/* Time: O(n), Space: O(1) where n is donor count */
+/* Time: O(log n) avg, Space: O(1) */
 Status donor_service_delete(SystemContext *ctx, int id) {
     if (!ctx || id <= 0) return ST_ERR_INVALID;
 
-    Donor *d = donor_list_find_by_id(ctx->donor_list_head, id);
+    /* 1. Find target donor via BST ID index */
+    Donor *d = bst_search(ctx->donor_id_bst, id);
     if (!d) {
         return ST_ERR_NOT_FOUND;
     }
 
-    /* Commit phase: unlink from list, free memory, update counter */
+    /* 2. Commit phase: remove from BST index, unlink from master list, free */
+    bst_delete(&ctx->donor_id_bst, id);
     donor_list_unlink(&ctx->donor_list_head, &ctx->donor_list_tail, d);
     donor_free(d);
     ctx->donor_count--;
@@ -103,12 +112,12 @@ Status donor_service_delete(SystemContext *ctx, int id) {
     return ST_OK;
 }
 
-/* Time: O(n), Space: O(1) where n is donor count */
+/* Time: O(log n) avg, O(n) worst; Space: O(1) */
 Status donor_service_find_by_id(const SystemContext *ctx, int id, Donor **out_donor) {
     if (!ctx || id <= 0 || !out_donor) return ST_ERR_INVALID;
     *out_donor = NULL;
 
-    Donor *d = donor_list_find_by_id(ctx->donor_list_head, id);
+    Donor *d = bst_search(ctx->donor_id_bst, id);
     if (!d) {
         return ST_ERR_NOT_FOUND;
     }
@@ -145,5 +154,44 @@ void donor_service_display_all(const SystemContext *ctx) {
 
     printf("-------------------------------------------------------------------------------------------------------------------\n");
     printf("Total Active Donors: %d (Max capacity: %d)\n", ctx->donor_count, MAX_DONORS);
+    printf("===================================================================================================================\n");
+}
+
+/* Helper callback for in-order traversal */
+static void print_donor_bst_visitor(const Donor *donor, void *user_data) {
+    (void)user_data;
+    if (!donor) return;
+
+    char date_buf[16];
+    date_format(donor->last_donation, date_buf, sizeof(date_buf));
+
+    printf("  ID: %-5d | Name: %-20s | Age: %2d | Gender: %c | Group: %-3s | Phone: %-15s | City: %-15s | Last: %s | Active: %s\n",
+           donor->id,
+           donor->name,
+           donor->age,
+           donor->gender,
+           bloodgroup_to_string(donor->blood_group),
+           donor->phone,
+           donor->city,
+           date_is_never(donor->last_donation) ? "never     " : date_buf,
+           donor->available ? "YES" : "NO ");
+}
+
+/* Time: O(n), Space: O(h) recursion stack */
+void donor_service_display_sorted_by_id(const SystemContext *ctx) {
+    if (!ctx) return;
+
+    printf("\n===================================================================================================================\n");
+    printf("                                    MASTER DONOR DIRECTORY (SORTED BY ID - BST)                                    \n");
+    printf("===================================================================================================================\n");
+
+    if (ctx->donor_count == 0 || ctx->donor_id_bst == NULL) {
+        printf("  [Directory is currently empty. No registered donors found.]\n");
+    } else {
+        bst_inorder(ctx->donor_id_bst, print_donor_bst_visitor, NULL);
+    }
+
+    printf("-------------------------------------------------------------------------------------------------------------------\n");
+    printf("Total Active Donors (Indexed in BST): %d\n", bst_count(ctx->donor_id_bst));
     printf("===================================================================================================================\n");
 }

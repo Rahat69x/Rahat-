@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "donor.h"
+#include "bst.h"
 
 /*
  * context.h - Master SystemContext definition and life-cycle management.
@@ -13,6 +14,7 @@
 typedef struct SystemContext {
     Donor *donor_list_head; /* Head of master singly linked list (owner of Donor memory) */
     Donor *donor_list_tail; /* Tail of master singly linked list */
+    BSTNode *donor_id_bst;  /* Root of Binary Search Tree index by donor ID */
     int donor_count;        /* Active donor count */
     int next_donor_id;      /* Monotonically increasing ID counter (never reused) */
     int next_request_id;    /* Request ID counter */
