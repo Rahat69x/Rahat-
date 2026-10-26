@@ -2,17 +2,18 @@
 #define CONTEXT_H
 
 #include "common.h"
+#include "donor.h"
 
 /*
  * context.h - Master SystemContext definition and life-cycle management.
  * Layer 4 module: central shared context passed by pointer to service modules.
- * Structure modules (bst, hashtable, donor, etc.) never include context.h.
- *
- * In Phase 0, initializes the monotonic counters and fulfilled metrics.
- * As phases progress, structure pointers (list, bst, hashtable, etc.) are added.
+ * Structure modules (donor, bst, hashtable, etc.) never include context.h.
  */
 
 typedef struct SystemContext {
+    Donor *donor_list_head; /* Head of master singly linked list (owner of Donor memory) */
+    Donor *donor_list_tail; /* Tail of master singly linked list */
+    int donor_count;        /* Active donor count */
     int next_donor_id;      /* Monotonically increasing ID counter (never reused) */
     int next_request_id;    /* Request ID counter */
     int next_sequence;      /* Global arrival sequence counter for tie-breaking */

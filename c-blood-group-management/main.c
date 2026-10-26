@@ -2,91 +2,389 @@
 #include "date.h"
 #include "bloodgroup.h"
 #include "utils.h"
+#include "donor.h"
 #include "context.h"
+#include "donor_service.h"
 
 /*
- * main.c - Phase 0 Entry Point & Minimal Demonstration Driver.
- * Provides a minimal interactive terminal menu to verify foundational modules:
- * safe line reading, integer overflow rejection, date arithmetic,
- * biological compatibility matrix, and SystemContext lifecycle.
+ * main.c - Blood Group Management System (Interactive Terminal Interface)
+ * Phase 1: Donor Registration, Search (by ID / Phone), Update, Deletion,
+ * Master List Traversal, and Blood Compatibility Matrix Query.
  */
 
 /* Time: O(1), Space: O(1) */
 static void print_banner(void) {
     printf("\n=================================================================\n");
     printf("         RED-PULSE: BLOOD GROUP MANAGEMENT SYSTEM               \n");
-    printf("                   (Phase 0: Setup & Foundations)                \n");
+    printf("                 (Phase 1: Donor Directory)                      \n");
     printf("=================================================================\n");
 }
 
 /* Time: O(1), Space: O(1) */
-static void demo_date_validation(void) {
-    char date_buf[32];
-    Date today = date_get_today();
-    char today_str[16];
-    date_format(today, today_str, sizeof(today_str));
+static void print_donor_card(const Donor *d, Date today) {
+    if (!d) return;
 
-    printf("\n--- DATE VALIDATION & ELIGIBILITY CHECK ---\n");
-    printf("System local date today: %s\n", today_str);
+    char date_buf[16];
+    date_format(d->last_donation, date_buf, sizeof(date_buf));
+
+    int eligible = bloodgroup_is_eligible(d->available, d->last_donation, today);
+
+    printf("\n+---------------------------------------------------------------+\n");
+    printf("| DONOR RECORD #%-5d                                            |\n", d->id);
+    printf("+---------------------------------------------------------------+\n");
+    printf("  Full Name          : %s\n", d->name);
+    printf("  Age / Gender       : %d years old | Gender: %c\n", d->age, d->gender);
+    printf("  Blood Group        : %s\n", bloodgroup_to_string(d->blood_group));
+    printf("  Contact Phone      : %s\n", d->phone);
+    printf("  Current City       : %s\n", d->city);
+    printf("  Last Donation Date : %s\n", date_is_never(d->last_donation) ? "Never donated" : date_buf);
+    printf("  Willing to Donate  : %s\n", d->available ? "YES (Active)" : "NO (Temporarily unavailable)");
+
+    if (eligible) {
+        printf("  Eligibility Status : [ELIGIBLE TO DONATE NOW]\n");
+    } else {
+        if (!d->available) {
+            printf("  Eligibility Status : [INELIGIBLE - Donor marked unavailable]\n");
+        } else {
+            int days_ago = date_days_between(d->last_donation, today);
+            int remaining = MIN_DONATION_GAP_DAYS - days_ago;
+            printf("  Eligibility Status : [INELIGIBLE - Cooldown period active, %d days left]\n",
+                   remaining > 0 ? remaining : 0);
+        }
+    }
+    printf("+---------------------------------------------------------------+\n");
+}
+
+/* Time: O(n), Space: O(1) */
+static void menu_register_donor(SystemContext *ctx, Date today) {
+    char name[MAX_NAME_LEN];
+    int age = 0;
+    char gender_buf[16];
+    char bg_buf[16];
+    char phone[MAX_PHONE_LEN];
+    char city[MAX_CITY_LEN];
+    char date_buf[32];
+    int available = 1;
+    int eof_flag = 0;
+
+    printf("\n--- REGISTER NEW BLOOD DONOR ---\n");
+
+    /* 1. Full Name */
+    printf("Enter full name (max %d chars, no '|'): ", MAX_NAME_LEN - 1);
+    fflush(stdout);
+    Status st = utils_read_text(name, sizeof(name), MAX_NAME_LEN - 1, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Invalid name. Must be 1-%d printable ASCII characters without '|'.\n", MAX_NAME_LEN - 1);
+        return;
+    }
+
+    /* 2. Age */
+    printf("Enter age (%d to %d): ", MIN_DONOR_AGE, MAX_DONOR_AGE);
+    fflush(stdout);
+    st = utils_read_int(&age, MIN_DONOR_AGE, MAX_DONOR_AGE, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Age must be an integer between %d and %d.\n", MIN_DONOR_AGE, MAX_DONOR_AGE);
+        return;
+    }
+
+    /* 3. Gender */
+    printf("Enter gender (M = Male, F = Female, O = Other): ");
+    fflush(stdout);
+    st = utils_read_line(gender_buf, sizeof(gender_buf), &eof_flag);
+    if (eof_flag) return;
+    utils_trim_whitespace(gender_buf);
+    if (st != ST_OK || strlen(gender_buf) != 1 || !donor_validate_gender(gender_buf[0])) {
+        printf("[ERROR] Gender must be a single character: 'M', 'F', or 'O'.\n");
+        return;
+    }
+    char gender = gender_buf[0];
+
+    /* 4. Blood Group */
+    printf("Enter blood group (A+, A-, B+, B-, AB+, AB-, O+, O-): ");
+    fflush(stdout);
+    st = utils_read_line(bg_buf, sizeof(bg_buf), &eof_flag);
+    if (eof_flag) return;
+    BloodGroup bg = bloodgroup_from_string(bg_buf);
+    if (bg == BG_INVALID) {
+        printf("[ERROR] Unrecognized blood group \"%s\".\n", bg_buf);
+        return;
+    }
+
+    /* 5. Contact Phone */
+    printf("Enter phone number (10 to 15 digits only): ");
+    fflush(stdout);
+    st = utils_read_line(phone, sizeof(phone), &eof_flag);
+    if (eof_flag) return;
+    utils_trim_whitespace(phone);
+    if (!donor_validate_phone(phone)) {
+        printf("[ERROR] Phone number must consist of 10 to 15 numeric digits.\n");
+        return;
+    }
+
+    /* 6. City */
+    printf("Enter city (max %d chars, no '|'): ", MAX_CITY_LEN - 1);
+    fflush(stdout);
+    st = utils_read_text(city, sizeof(city), MAX_CITY_LEN - 1, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Invalid city name.\n");
+        return;
+    }
+
+    /* 7. Last Donation Date */
     printf("Enter last donation date (YYYY-MM-DD or 'never'): ");
     fflush(stdout);
-
-    int eof_flag = 0;
-    Status st = utils_read_line(date_buf, sizeof(date_buf), &eof_flag);
-    if (eof_flag) {
-        printf("\n[CANCELED] EOF encountered.\n");
-        return;
-    }
-    if (st != ST_OK) {
-        printf("[ERROR] Input line too long or invalid.\n");
-        return;
-    }
-
+    st = utils_read_line(date_buf, sizeof(date_buf), &eof_flag);
+    if (eof_flag) return;
     utils_trim_whitespace(date_buf);
-    if (date_buf[0] == '\0') {
-        printf("[ERROR] Date input cannot be empty.\n");
+    Date last_donation;
+    if (date_parse_user(date_buf, &last_donation, today) != ST_OK) {
+        printf("[ERROR] Invalid date format or date in future. Use YYYY-MM-DD or 'never'.\n");
         return;
     }
 
-    Date input_date;
-    Status parse_status = date_parse_user(date_buf, &input_date, today);
-    if (parse_status != ST_OK) {
-        printf("[REJECTED] Invalid date \"%s\".\n", date_buf);
-        printf("Rules: Must be exactly 10 characters (YYYY-MM-DD) or 'never',\n");
-        printf("month 1-12, valid day in month (Gregorian leap years supported),\n");
-        printf("year >= 1900, and cannot be in the future relative to today (%s).\n", today_str);
-        return;
-    }
+    /* 8. Available flag */
+    st = utils_read_confirm("Is the donor currently available and willing to donate?", &available, &eof_flag);
+    if (eof_flag) return;
 
-    char parsed_str[16];
-    date_format(input_date, parsed_str, sizeof(parsed_str));
-    printf("[ACCEPTED] Successfully parsed date: %s\n", parsed_str);
-
-    int eligible = bloodgroup_is_eligible(1, input_date, today);
-    if (date_is_never(input_date)) {
-        printf("Status: Donor has NEVER donated before -> ELIGIBLE to donate immediately.\n");
+    /* Execute Transactional Add */
+    int new_id = 0;
+    st = donor_service_add(ctx, name, age, gender, bg, phone, city, last_donation, available, today, &new_id);
+    if (st == ST_OK) {
+        printf("\n[SUCCESS] Donor registered successfully with Unique ID: %d\n", new_id);
+        Donor *created = NULL;
+        donor_service_find_by_id(ctx, new_id, &created);
+        print_donor_card(created, today);
+    } else if (st == ST_ERR_DUPLICATE) {
+        printf("\n[ERROR] Registration rejected: A donor with phone \"%s\" already exists.\n", phone);
+    } else if (st == ST_ERR_LIMIT) {
+        printf("\n[ERROR] Registration rejected: Donor capacity limit (%d) reached.\n", MAX_DONORS);
     } else {
-        int elapsed_days = date_days_between(input_date, today);
-        printf("Elapsed days since last donation: %d days.\n", elapsed_days);
-        printf("Eligibility evaluation (>= %d days required): %s\n",
-               MIN_DONATION_GAP_DAYS,
-               eligible ? "ELIGIBLE" : "INELIGIBLE (Within 90-day cooldown period)");
+        printf("\n[ERROR] Registration failed: %s (code %d)\n", status_message(st), st);
+    }
+}
+
+/* Time: O(n), Space: O(1) */
+static void menu_search_by_id(const SystemContext *ctx, Date today) {
+    printf("\n--- SEARCH DONOR BY ID ---\n");
+    printf("Enter Donor ID to lookup: ");
+    fflush(stdout);
+
+    int id = 0;
+    int eof_flag = 0;
+    Status st = utils_read_int(&id, 1, 100000000, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Please enter a positive integer ID.\n");
+        return;
+    }
+
+    Donor *d = NULL;
+    st = donor_service_find_by_id(ctx, id, &d);
+    if (st == ST_OK && d) {
+        print_donor_card(d, today);
+    } else {
+        printf("[NOT FOUND] No donor found with ID #%d.\n", id);
+    }
+}
+
+/* Time: O(n), Space: O(1) */
+static void menu_search_by_phone(const SystemContext *ctx, Date today) {
+    printf("\n--- SEARCH DONOR BY PHONE NUMBER ---\n");
+    printf("Enter phone number (10 to 15 digits): ");
+    fflush(stdout);
+
+    char phone[MAX_PHONE_LEN];
+    int eof_flag = 0;
+    Status st = utils_read_line(phone, sizeof(phone), &eof_flag);
+    if (eof_flag) return;
+    utils_trim_whitespace(phone);
+
+    if (st != ST_OK || !donor_validate_phone(phone)) {
+        printf("[ERROR] Invalid phone format. Must be 10 to 15 numeric digits.\n");
+        return;
+    }
+
+    Donor *d = NULL;
+    st = donor_service_find_by_phone(ctx, phone, &d);
+    if (st == ST_OK && d) {
+        print_donor_card(d, today);
+    } else {
+        printf("[NOT FOUND] No donor registered with phone \"%s\".\n", phone);
+    }
+}
+
+/* Time: O(n), Space: O(1) */
+static void menu_update_donor(SystemContext *ctx, Date today) {
+    printf("\n--- UPDATE DONOR INFORMATION ---\n");
+    printf("Enter Donor ID to update: ");
+    fflush(stdout);
+
+    int id = 0;
+    int eof_flag = 0;
+    Status st = utils_read_int(&id, 1, 100000000, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Please enter a positive integer ID.\n");
+        return;
+    }
+
+    Donor *d = NULL;
+    st = donor_service_find_by_id(ctx, id, &d);
+    if (st != ST_OK || !d) {
+        printf("[NOT FOUND] No donor found with ID #%d.\n", id);
+        return;
+    }
+
+    printf("\nCurrent Donor Details:\n");
+    print_donor_card(d, today);
+
+    char name[MAX_NAME_LEN];
+    int age = 0;
+    char gender_buf[16];
+    char bg_buf[16];
+    char phone[MAX_PHONE_LEN];
+    char city[MAX_CITY_LEN];
+    char date_buf[32];
+    int available = 1;
+
+    printf("\nEnter updated full name (max %d chars, no '|'): ", MAX_NAME_LEN - 1);
+    fflush(stdout);
+    st = utils_read_text(name, sizeof(name), MAX_NAME_LEN - 1, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Invalid name.\n");
+        return;
+    }
+
+    printf("Enter updated age (%d to %d): ", MIN_DONOR_AGE, MAX_DONOR_AGE);
+    fflush(stdout);
+    st = utils_read_int(&age, MIN_DONOR_AGE, MAX_DONOR_AGE, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Invalid age.\n");
+        return;
+    }
+
+    printf("Enter updated gender (M/F/O): ");
+    fflush(stdout);
+    st = utils_read_line(gender_buf, sizeof(gender_buf), &eof_flag);
+    if (eof_flag) return;
+    utils_trim_whitespace(gender_buf);
+    if (st != ST_OK || strlen(gender_buf) != 1 || !donor_validate_gender(gender_buf[0])) {
+        printf("[ERROR] Invalid gender.\n");
+        return;
+    }
+    char gender = gender_buf[0];
+
+    printf("Enter updated blood group (A+, A-, B+, B-, AB+, AB-, O+, O-): ");
+    fflush(stdout);
+    st = utils_read_line(bg_buf, sizeof(bg_buf), &eof_flag);
+    if (eof_flag) return;
+    BloodGroup bg = bloodgroup_from_string(bg_buf);
+    if (bg == BG_INVALID) {
+        printf("[ERROR] Unrecognized blood group.\n");
+        return;
+    }
+
+    printf("Enter updated phone number (10 to 15 digits): ");
+    fflush(stdout);
+    st = utils_read_line(phone, sizeof(phone), &eof_flag);
+    if (eof_flag) return;
+    utils_trim_whitespace(phone);
+    if (!donor_validate_phone(phone)) {
+        printf("[ERROR] Invalid phone number.\n");
+        return;
+    }
+
+    printf("Enter updated city (max %d chars, no '|'): ", MAX_CITY_LEN - 1);
+    fflush(stdout);
+    st = utils_read_text(city, sizeof(city), MAX_CITY_LEN - 1, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Invalid city name.\n");
+        return;
+    }
+
+    printf("Enter updated last donation date (YYYY-MM-DD or 'never'): ");
+    fflush(stdout);
+    st = utils_read_line(date_buf, sizeof(date_buf), &eof_flag);
+    if (eof_flag) return;
+    utils_trim_whitespace(date_buf);
+    Date last_donation;
+    if (date_parse_user(date_buf, &last_donation, today) != ST_OK) {
+        printf("[ERROR] Invalid date format or date in future.\n");
+        return;
+    }
+
+    st = utils_read_confirm("Is donor currently available to donate?", &available, &eof_flag);
+    if (eof_flag) return;
+
+    /* Transactional Update Execution */
+    st = donor_service_update(ctx, id, name, age, gender, bg, phone, city, last_donation, available, today);
+    if (st == ST_OK) {
+        printf("\n[SUCCESS] Donor #%d updated successfully.\n", id);
+        print_donor_card(d, today);
+    } else if (st == ST_ERR_DUPLICATE) {
+        printf("\n[ERROR] Update failed: Phone number \"%s\" is already used by another donor.\n", phone);
+    } else {
+        printf("\n[ERROR] Update failed: %s (code %d)\n", status_message(st), st);
+    }
+}
+
+/* Time: O(n), Space: O(1) */
+static void menu_delete_donor(SystemContext *ctx, Date today) {
+    printf("\n--- DELETE DONOR RECORD ---\n");
+    printf("Enter Donor ID to delete: ");
+    fflush(stdout);
+
+    int id = 0;
+    int eof_flag = 0;
+    Status st = utils_read_int(&id, 1, 100000000, &eof_flag);
+    if (eof_flag) return;
+    if (st != ST_OK) {
+        printf("[ERROR] Please enter a positive integer ID.\n");
+        return;
+    }
+
+    Donor *d = NULL;
+    st = donor_service_find_by_id(ctx, id, &d);
+    if (st != ST_OK || !d) {
+        printf("[NOT FOUND] No donor found with ID #%d.\n", id);
+        return;
+    }
+
+    printf("\nDonor to be deleted:\n");
+    print_donor_card(d, today);
+
+    int confirmed = 0;
+    st = utils_read_confirm("Are you sure you want to permanently delete this donor?", &confirmed, &eof_flag);
+    if (eof_flag || !confirmed) {
+        printf("[CANCELED] Deletion canceled. Donor #%d was NOT deleted.\n", id);
+        return;
+    }
+
+    st = donor_service_delete(ctx, id);
+    if (st == ST_OK) {
+        printf("\n[SUCCESS] Donor #%d was permanently removed from the system.\n", id);
+    } else {
+        printf("\n[ERROR] Deletion failed: %s (code %d)\n", status_message(st), st);
     }
 }
 
 /* Time: O(1), Space: O(1) */
-static void demo_compatibility_query(void) {
+static void menu_compatibility_query(void) {
     char bg_buf[16];
-    printf("\n--- BLOOD GROUP COMPATIBILITY MATRIX QUERY ---\n");
-    printf("Enter patient blood group needed (e.g., A+, O-, B+, AB-): ");
+    int eof_flag = 0;
+
+    printf("\n--- BLOOD GROUP COMPATIBILITY QUERY ---\n");
+    printf("Enter patient blood group needed (A+, A-, B+, B-, AB+, AB-, O+, O-): ");
     fflush(stdout);
 
-    int eof_flag = 0;
     Status st = utils_read_line(bg_buf, sizeof(bg_buf), &eof_flag);
-    if (eof_flag) {
-        printf("\n[CANCELED] EOF encountered.\n");
-        return;
-    }
+    if (eof_flag) return;
     if (st != ST_OK) {
         printf("[ERROR] Input line too long.\n");
         return;
@@ -110,120 +408,72 @@ static void demo_compatibility_query(void) {
     }
 }
 
-/* Time: O(1), Space: O(1) */
-static void demo_input_validation(void) {
-    printf("\n--- SAFE INPUT & VALIDATORS DEMONSTRATION ---\n");
-    printf("1. Integer Reading (Donor Age 18-65, rejects >9 digits to prevent overflow):\n");
-    printf("Enter age: ");
-    fflush(stdout);
-
-    int age = 0;
-    int eof_flag = 0;
-    Status st = utils_read_int(&age, MIN_DONOR_AGE, MAX_DONOR_AGE, &eof_flag);
-    if (eof_flag) {
-        printf("\n[CANCELED] EOF encountered.\n");
-        return;
-    }
-    if (st == ST_OK) {
-        printf("[ACCEPTED] Valid donor age: %d\n", age);
-    } else {
-        printf("[REJECTED] Input invalid: must be 1-9 digits within [%d, %d].\n",
-               MIN_DONOR_AGE, MAX_DONOR_AGE);
-    }
-
-    printf("\n2. Text Field Validation (ASCII 32-126, no '|' delimiter, max 50 chars):\n");
-    printf("Enter donor name: ");
-    fflush(stdout);
-
-    char name_buf[64];
-    st = utils_read_text(name_buf, sizeof(name_buf), MAX_NAME_LEN, &eof_flag);
-    if (eof_flag) {
-        printf("\n[CANCELED] EOF encountered.\n");
-        return;
-    }
-    if (st == ST_OK) {
-        printf("[ACCEPTED] Valid text: \"%s\"\n", name_buf);
-    } else {
-        printf("[REJECTED] Text invalid: must be printable ASCII, non-empty, trimmed, and NO '|'.\n");
-    }
-
-    printf("\n3. Phone Number Validation (10-15 digits, leading zeros kept):\n");
-    printf("Enter phone number: ");
-    fflush(stdout);
-
-    char phone_buf[32];
-    st = utils_read_line(phone_buf, sizeof(phone_buf), &eof_flag);
-    if (eof_flag) {
-        printf("\n[CANCELED] EOF encountered.\n");
-        return;
-    }
-    if (st == ST_OK) {
-        utils_trim_whitespace(phone_buf);
-        if (utils_is_valid_phone(phone_buf)) {
-            printf("[ACCEPTED] Valid phone: %s\n", phone_buf);
-        } else {
-            printf("[REJECTED] Phone \"%s\" invalid: must be 10 to 15 digits only.\n", phone_buf);
-        }
-    }
-
-    printf("\n4. Yes/No Confirmation Prompt:\n");
-    int confirmed = 0;
-    st = utils_read_confirm("Do you wish to proceed?", &confirmed, &eof_flag);
-    if (eof_flag) {
-        printf("\n[CANCELED] EOF encountered.\n");
-        return;
-    }
-    if (st == ST_OK) {
-        printf("[RESULT] User answered: %s\n", confirmed ? "YES (Confirmed)" : "NO (Declined)");
-    }
-}
-
 /* Time: O(1) per menu iteration, Space: O(1) */
 int main(void) {
     SystemContext ctx;
     context_init(&ctx);
+
+    Date today = date_get_today();
+    char today_str[16];
+    date_format(today, today_str, sizeof(today_str));
 
     int choice = -1;
     int eof_flag = 0;
 
     for (;;) {
         print_banner();
-        printf("Context State: next_donor_id=%d | next_request_id=%d | next_sequence=%d\n",
-               ctx.next_donor_id, ctx.next_request_id, ctx.next_sequence);
+        printf("System Date: %s | Registered Donors: %d | Next ID: %d\n",
+               today_str, ctx.donor_count, ctx.next_donor_id);
         printf("-----------------------------------------------------------------\n");
-        printf("1. Test Date Validation & 90-Day Eligibility Check\n");
-        printf("2. Test Blood Group Compatibility Matrix Query\n");
-        printf("3. Test Safe Input & Field Validators\n");
-        printf("0. Exit\n");
+        printf("1. Register New Donor\n");
+        printf("2. Search Donor by ID\n");
+        printf("3. Search Donor by Phone\n");
+        printf("4. Update Donor Information\n");
+        printf("5. Delete Donor Record\n");
+        printf("6. Display All Registered Donors (List Order)\n");
+        printf("7. Query Blood Group Compatibility Matrix\n");
+        printf("0. Exit System\n");
         printf("-----------------------------------------------------------------\n");
-        printf("Enter choice (0-3): ");
+        printf("Enter your choice (0-7): ");
         fflush(stdout);
 
-        Status st = utils_read_int(&choice, 0, 3, &eof_flag);
+        Status st = utils_read_int(&choice, 0, 7, &eof_flag);
         if (eof_flag) {
-            printf("\n[EOF Detected] Exiting cleanly from main menu.\n");
+            printf("\n[EOF Detected] Exiting system cleanly.\n");
             break;
         }
 
         if (st != ST_OK) {
-            printf("[ERROR] Please enter a valid menu number (0-3).\n");
+            printf("[ERROR] Please enter a valid menu number between 0 and 7.\n");
             continue;
         }
 
         if (choice == 0) {
-            printf("\nExiting Phase 0 demonstration. Memory cleanly managed.\n");
+            printf("\nExiting Red-Pulse Blood Group Management System. Goodbye!\n");
             break;
         }
 
         switch (choice) {
             case 1:
-                demo_date_validation();
+                menu_register_donor(&ctx, today);
                 break;
             case 2:
-                demo_compatibility_query();
+                menu_search_by_id(&ctx, today);
                 break;
             case 3:
-                demo_input_validation();
+                menu_search_by_phone(&ctx, today);
+                break;
+            case 4:
+                menu_update_donor(&ctx, today);
+                break;
+            case 5:
+                menu_delete_donor(&ctx, today);
+                break;
+            case 6:
+                donor_service_display_all(&ctx);
+                break;
+            case 7:
+                menu_compatibility_query();
                 break;
             default:
                 break;
