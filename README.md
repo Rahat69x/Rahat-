@@ -11,6 +11,7 @@ Welcome to the central repository for C programming projects, algorithmic soluti
 | Project | Location | Description |
 |---|---|---|
 | **Console-Based ATM Simulation** | [`./c-atm-simulation`](./c-atm-simulation) | Comprehensive modular ATM simulation in ISO C11 implementing Core Banking + Advanced Features A1 to A22 (Salted PINs, Simulated SMS OTP, Fraud Detection Engine, Multi-Currency BDT/USD/EUR, Loan Amortization, Recurring Bills, Cassette Inventory, Disputes, and Audit Logging). |
+| **Blood Group Management System** | [`./c-blood-group-management`](./c-blood-group-management) | Menu-driven terminal system in C99 for blood donor and request management, built on a linked list, two BSTs, a hash table, a queue, a max heap and an undo stack. (in development) |
 | **Screen Sense** | [`./project_01_Screen_Sense`](./project_01_Screen_Sense) | Digital wellbeing screen time tracker evaluating daily PC, laptop, and phone usage thresholds. |
 | **Code Quizzer** | [`./project_02_code_quizzer`](./project_02_code_quizzer) | Interactive terminal-based knowledge quiz program assessing programming concepts. |
 
@@ -61,6 +62,19 @@ make
 # Run the terminal application
 ./atm_sim       # On Linux/macOS
 .\atm_sim.exe   # On Windows
+```
+
+### Building & Running the Blood Group Management System
+```bash
+# Navigate to the blood group management system directory
+cd c-blood-group-management
+
+# Build using make or mingw32-make
+make            # Or: mingw32-make
+
+# Run the terminal application
+./build/bgms         # On Linux/macOS
+.\build\bgms.exe     # On Windows
 ```
 
 ### Running Standalone C Programs
