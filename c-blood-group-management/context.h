@@ -6,11 +6,13 @@
 #include "bst.h"
 #include "hashtable.h"
 #include "buckets.h"
+#include "request.h"
+#include "queue.h"
 
 /*
  * context.h - Master SystemContext definition and life-cycle management.
  * Layer 4 module: central shared context passed by pointer to service modules.
- * Structure modules (donor, bst, hashtable, buckets, etc.) never include context.h.
+ * Structure modules never include context.h.
  */
 
 typedef struct SystemContext {
@@ -19,6 +21,7 @@ typedef struct SystemContext {
     BSTNode *donor_id_bst;        /* Root of Binary Search Tree index by donor ID */
     HashTable phone_table;        /* Hash table index by donor phone number */
     BloodGroupBuckets bg_buckets; /* 8-group classified donor buckets index */
+    RequestQueue normal_queue;    /* FIFO queue for normal blood requests */
     int donor_count;              /* Active donor count */
     int next_donor_id;            /* Monotonically increasing ID counter (never reused) */
     int next_request_id;          /* Request ID counter */

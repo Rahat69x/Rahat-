@@ -99,4 +99,11 @@ int utils_is_valid_age(int age);
  */
 void utils_copy_string(char *dest, const char *src, size_t dest_size);
 
+/*
+ * Case-insensitive ASCII string comparison (pure C99, portable across all platforms).
+ * Returns <0 if s1 < s2, 0 if s1 == s2, >0 if s1 > s2.
+ */
+int utils_strcasecmp(const char *s1, const char *s2);
+
 #endif /* UTILS_H */
+

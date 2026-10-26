@@ -257,3 +257,21 @@ void utils_copy_string(char *dest, const char *src, size_t dest_size) {
     }
     dest[i] = '\0';
 }
+
+/* Time: O(n), Space: O(1) */
+int utils_strcasecmp(const char *s1, const char *s2) {
+    if (!s1 && !s2) return 0;
+    if (!s1) return -1;
+    if (!s2) return 1;
+
+    while (*s1 && *s2) {
+        int c1 = toupper((unsigned char)*s1);
+        int c2 = toupper((unsigned char)*s2);
+        if (c1 != c2) {
+            return c1 - c2;
+        }
+        s1++;
+        s2++;
+    }
+    return (int)toupper((unsigned char)*s1) - (int)toupper((unsigned char)*s2);
+}
