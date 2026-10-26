@@ -25,7 +25,8 @@ typedef enum {
     ST_ERR_STATE       = -6,  /* Operation invalid in current state / user canceled */
     ST_ERR_NO_DONORS   = -7,  /* Insufficient eligible compatible donors found */
     ST_ERR_IO          = -8,  /* File or stream input/output error */
-    ST_ERR_FORMAT      = -9   /* File format, checksum, or syntax validation error */
+    ST_ERR_FORMAT      = -9,  /* File format, checksum, or syntax validation error */
+    ST_ERR_LIMIT       = -10  /* Capacity or configuration limit reached */
 } Status;
 
 /* Global capacity and domain limits */
@@ -34,6 +35,17 @@ typedef enum {
 #define UNDO_DEPTH              20
 #define HASH_SIZE               101
 #define MIN_DONATION_GAP_DAYS   90
+
+/* Feature F1: City Graph & Nearest-Donor Ranking limits */
+#define MAX_CITIES              30
+#define MAX_ROADS               200
+#define MAX_ROAD_KM             999
+#define INF_KM                  1000000
+
+/* Feature F2: Fulfilment History limits */
+#define MAX_HISTORY             200
+#define MAX_UNITS               10
+#define HISTORY_PAGE_SIZE       5
 
 #define MAX_NAME_LEN            50
 #define MAX_PHONE_LEN           16

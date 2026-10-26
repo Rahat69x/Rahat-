@@ -27,6 +27,8 @@ const char *status_message(Status s) {
             return "I/O stream or file access error";
         case ST_ERR_FORMAT:
             return "Invalid data format or checksum verification failure";
+        case ST_ERR_LIMIT:
+            return "Capacity or configuration limit reached";
         default:
             return "Unknown status code";
     }

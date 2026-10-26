@@ -1,6 +1,6 @@
 # Blood Group Management System (C99 Standard)
 
-A robust, menu-driven terminal management system in pure C99 for blood donors and blood requests, featuring transactional data structures: a singly linked list, dual Binary Search Trees, a hash table, a request queue, a priority max heap, and an undo stack.
+A robust, menu-driven terminal management system in pure C99 for blood donors and blood requests, featuring transactional data structures: a singly linked list, dual Binary Search Trees, a hash table, a request queue, a priority max heap, an undo stack, a city graph, and a doubly linked history list.
 
 > **Educational Disclaimer:** This software is an educational project developed for academic computer science study. All sample donor names and contact numbers are entirely fictional. This system is **not** designed, certified, or intended for real-world medical, hospital, or blood-bank clinical operations.
 
