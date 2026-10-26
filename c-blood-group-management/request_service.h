@@ -5,11 +5,12 @@
 #include "request.h"
 #include "queue.h"
 #include "heap.h"
+#include "undo.h"
 #include "donor.h"
 
 /*
  * request_service.h - Transactional blood request submission, prioritization,
- * donor matching, and fulfillment processing.
+ * donor matching, fulfillment processing, and undo.
  * Layer 5 module: coordinates request domain, queues, buckets, and donor entities.
  */
 
@@ -35,8 +36,18 @@ Status request_service_add(SystemContext *ctx, const char *patient_name, BloodGr
  * Matches compatible eligible donors (exact blood group prioritized first).
  * Transactional prepare/commit: if insufficient donors are available, request is not dequeued
  * and donor records remain 100% untouched (returns ST_ERR_NO_DONORS).
+ * If successful, pushes an UndoRecord onto ctx->undo_stack.
  */
 Status request_service_process_next(SystemContext *ctx, Date today, FulfillmentDetails *out_details);
+
+/*
+ * Undoes the most recently processed blood request fulfillment.
+ * Restores each donor's last_donation date to its prior date.
+ * Re-enqueues the blood request back to where it originated (emergency heap or normal queue).
+ * Decrements fulfilled_count.
+ * Returns ST_OK on success, ST_ERR_EMPTY if no fulfillment records in undo stack.
+ */
+Status request_service_undo(SystemContext *ctx, BloodRequest *out_restored_req);
 
 /*
  * Displays all currently pending blood requests (Emergency Heap + Normal Queue).

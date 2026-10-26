@@ -14,6 +14,7 @@ void context_init(SystemContext *ctx) {
     buckets_init(&ctx->bg_buckets);
     queue_init(&ctx->normal_queue);
     heap_init(&ctx->emergency_heap);
+    undo_init(&ctx->undo_stack);
     ctx->donor_count = 0;
     ctx->next_donor_id = 1;
     ctx->next_request_id = 1;
@@ -24,12 +25,13 @@ void context_init(SystemContext *ctx) {
 /* Time: O(HASH_SIZE + BG_COUNT + n + q), Space: O(h) */
 void context_destroy(SystemContext *ctx) {
     if (!ctx) return;
-    /* 1. Tear down index and queue structures */
+    /* 1. Tear down index, queue, and stack structures */
     bst_free_all(&ctx->donor_id_bst);
     ht_free_all(&ctx->phone_table);
     buckets_free_all(&ctx->bg_buckets);
     queue_free_all(&ctx->normal_queue);
     heap_init(&ctx->emergency_heap);
+    undo_init(&ctx->undo_stack);
 
     /* 2. Deallocate all Donors via master singly linked list */
     donor_list_free_all(&ctx->donor_list_head, &ctx->donor_list_tail);

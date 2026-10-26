@@ -1,7 +1,8 @@
 #include "request_service.h"
+#include "donor_service.h"
 
 /*
- * request_service.c - Implementation of request submission and matching algorithm.
+ * request_service.c - Implementation of request submission, matching algorithm, and undo.
  */
 
 /* Time: O(log n) for emergency or O(1) for normal, Space: O(1) */
@@ -105,7 +106,7 @@ Status request_service_process_next(SystemContext *ctx, Date today, FulfillmentD
         return ST_ERR_NO_DONORS;
     }
 
-    /* 4. Commit Phase: Dequeue request and update donor records (cannot fail) */
+    /* 4. Commit Phase: Dequeue request and update donor records */
     BloodRequest extracted;
     if (was_emergency) {
         heap_extract_max(&ctx->emergency_heap, &extracted);
@@ -124,7 +125,55 @@ Status request_service_process_next(SystemContext *ctx, Date today, FulfillmentD
         candidates[i]->last_donation = today;
     }
 
+    /* 5. Push onto Undo Stack */
+    UndoRecord undo_rec;
+    undo_rec.request = extracted;
+    undo_rec.matched_count = matched;
+    undo_rec.was_emergency = was_emergency;
+    for (int i = 0; i < matched; i++) {
+        undo_rec.matched_donor_ids[i] = candidates[i]->id;
+        undo_rec.prev_donations[i] = prev_dates[i];
+    }
+    undo_push(&ctx->undo_stack, &undo_rec);
+
     ctx->fulfilled_count++;
+    return ST_OK;
+}
+
+/* Time: O(units * log(donors)), Space: O(1) */
+Status request_service_undo(SystemContext *ctx, BloodRequest *out_restored_req) {
+    if (!ctx) return ST_ERR_INVALID;
+
+    UndoRecord rec;
+    Status st = undo_pop(&ctx->undo_stack, &rec);
+    if (st != ST_OK) {
+        return st; /* ST_ERR_EMPTY if no undo operations available */
+    }
+
+    /* 1. Restore donors' previous donation dates */
+    for (int i = 0; i < rec.matched_count; i++) {
+        Donor *d = NULL;
+        donor_service_find_by_id(ctx, rec.matched_donor_ids[i], &d);
+        if (d) {
+            d->last_donation = rec.prev_donations[i];
+        }
+    }
+
+    /* 2. Re-insert request into originating queue/heap */
+    if (rec.was_emergency) {
+        heap_insert(&ctx->emergency_heap, &rec.request);
+    } else {
+        queue_enqueue(&ctx->normal_queue, &rec.request);
+    }
+
+    if (ctx->fulfilled_count > 0) {
+        ctx->fulfilled_count--;
+    }
+
+    if (out_restored_req) {
+        *out_restored_req = rec.request;
+    }
+
     return ST_OK;
 }
 
